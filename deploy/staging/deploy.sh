@@ -11,7 +11,8 @@ APP_DIR=/opt/ragoh
 PARAM_PREFIX=/ragoh/staging
 
 cd "$APP_DIR"
-mkdir -p data/postgres data/caddy
+mkdir -p data/postgres data/caddy data/media
+chown 10001 data/media  # API container user
 
 param() {
   aws ssm get-parameter --region "$REGION" --with-decryption \

@@ -15,9 +15,11 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     Time,
@@ -269,6 +271,107 @@ class Assignment(TimestampMixin, Base):
     status_reason: Mapped[str | None] = mapped_column(Text)
     status_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     assigned_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+
+
+# ---------------------------------------------------------------------------
+# Forms, shifts and submissions (Phase 2)
+# ---------------------------------------------------------------------------
+class FormKind(enum.StrEnum):
+    survey = "survey"
+    supervision = "supervision"
+    backcheck = "backcheck"
+
+
+class Form(TimestampMixin, Base):
+    __tablename__ = "forms"
+    id: Mapped[uuid.UUID] = _uuid()
+    campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id"), index=True)
+    id_string: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[FormKind] = mapped_column(_enum(FormKind, "form_kind"))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    __table_args__ = (UniqueConstraint("campaign_id", "id_string"),)
+
+
+class FormVersion(Base):
+    __tablename__ = "form_versions"
+    id: Mapped[uuid.UUID] = _uuid()
+    form_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("forms.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[str] = mapped_column(String(50))
+    schema: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    xlsform: Mapped[bytes] = mapped_column(LargeBinary)
+    published_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    __table_args__ = (UniqueConstraint("form_id", "version"),)
+
+
+class Shift(Base):
+    """A collector's working period. Created on the phone (client UUID), synced later."""
+
+    __tablename__ = "shifts"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    device_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("devices.id"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    end_reason: Mapped[str | None] = mapped_column(String(30))
+    start_geom: Mapped[Any | None] = mapped_column(
+        Geometry("POINT", srid=4326, spatial_index=False)
+    )
+    end_geom: Mapped[Any | None] = mapped_column(Geometry("POINT", srid=4326, spatial_index=False))
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Submission(Base):
+    __tablename__ = "submissions"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    form_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("form_versions.id"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    device_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("devices.id"))
+    shift_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    assignment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("assignments.id"), index=True
+    )
+    visit_point_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("visit_points.id"), index=True
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    duration_s: Mapped[int] = mapped_column(Integer)
+    start_geom: Mapped[Any | None] = mapped_column(
+        Geometry("POINT", srid=4326, spatial_index=False)
+    )
+    end_geom: Mapped[Any | None] = mapped_column(Geometry("POINT", srid=4326, spatial_index=True))
+    accuracy_m: Mapped[float | None] = mapped_column(Float)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    app_version: Mapped[str | None] = mapped_column(String(20))
+    clock_offset_s: Mapped[int | None] = mapped_column(Integer)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class SubmissionMedia(Base):
+    __tablename__ = "submission_media"
+    id: Mapped[uuid.UUID] = _uuid()
+    submission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("submissions.id", ondelete="CASCADE"), index=True
+    )
+    field_name: Mapped[str] = mapped_column(String(100))
+    filename: Mapped[str] = mapped_column(String(200))
+    mime: Mapped[str] = mapped_column(String(100))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(Text)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    __table_args__ = (UniqueConstraint("submission_id", "field_name"),)
 
 
 # ---------------------------------------------------------------------------

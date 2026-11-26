@@ -181,3 +181,102 @@ class AssignmentOut(BaseModel):
     planned_date: date | None
     status: AssignmentStatus
     visit_point: VisitPointOut
+
+
+# --- Forms ------------------------------------------------------------------
+class FormVersionOut(BaseModel):
+    form_id: uuid.UUID
+    version_id: uuid.UUID
+    campaign_id: uuid.UUID
+    id_string: str
+    name: str
+    kind: str
+    version: str
+    published_at: datetime
+    schema_: dict[str, Any] | None = Field(default=None, alias="schema")
+
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
+
+# --- Sync -------------------------------------------------------------------
+class GeoPointIn(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    accuracy_m: float | None = Field(default=None, ge=0)
+
+
+class DeviceIn(BaseModel):
+    id: uuid.UUID
+    model: str | None = Field(default=None, max_length=120)
+    android_version: str | None = Field(default=None, max_length=20)
+    app_version: str | None = Field(default=None, max_length=20)
+
+
+class ShiftIn(BaseModel):
+    id: uuid.UUID
+    started_at: datetime
+    ended_at: datetime | None = None
+    end_reason: str | None = Field(default=None, max_length=30)
+    start_location: GeoPointIn | None = None
+    end_location: GeoPointIn | None = None
+
+
+class SubmissionIn(BaseModel):
+    id: uuid.UUID
+    form_version_id: uuid.UUID
+    shift_id: uuid.UUID | None = None
+    assignment_id: uuid.UUID | None = None
+    visit_point_id: uuid.UUID | None = None
+    started_at: datetime
+    ended_at: datetime
+    start_location: GeoPointIn | None = None
+    end_location: GeoPointIn | None = None
+    data: dict[str, Any]
+
+
+class AssignmentUpdateIn(BaseModel):
+    id: uuid.UUID = Field(description="Client UUID of this status change (for idempotency)")
+    assignment_id: uuid.UUID
+    status: AssignmentStatus
+    reason: str | None = Field(default=None, max_length=500)
+    changed_at: datetime
+
+
+class SyncPushIn(BaseModel):
+    device: DeviceIn
+    device_time: datetime
+    shifts: list[ShiftIn] = []
+    submissions: list[SubmissionIn] = []
+    assignment_updates: list[AssignmentUpdateIn] = []
+
+
+class RejectedItem(BaseModel):
+    kind: str
+    id: uuid.UUID
+    error: str
+
+
+class SyncPushOut(BaseModel):
+    server_time: datetime
+    accepted: dict[str, list[uuid.UUID]]
+    rejected: list[RejectedItem]
+
+
+class CampaignSyncOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    config: dict[str, Any]
+
+
+class SyncPullOut(BaseModel):
+    server_time: datetime
+    user: UserOut
+    campaigns: list[CampaignSyncOut]
+    forms: list[FormVersionOut]
+    assignments: list[AssignmentOut]
+
+
+class MediaOut(BaseModel):
+    submission_id: uuid.UUID
+    field_name: str
+    size_bytes: int

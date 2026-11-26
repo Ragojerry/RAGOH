@@ -20,6 +20,7 @@ import sys
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.v1.forms import publish_form
 from app.core.defaults import geofence_for
 from app.core.security import hash_password
 from app.db.models import (
@@ -27,6 +28,7 @@ from app.db.models import (
     AreaLevel,
     Assignment,
     Campaign,
+    FormKind,
     Organisation,
     PointType,
     Role,
@@ -37,6 +39,7 @@ from app.db.models import (
     VisitPoint,
 )
 from app.db.session import SessionLocal
+from app.seed_forms import SEED_FORMS
 from app.services.areas import create_or_update_area
 from app.services.geo import point_wkt
 
@@ -189,6 +192,9 @@ def seed_demo(db: Session, org: Organisation) -> None:
             db.add(point)
             db.flush()
             db.add(Assignment(visit_point_id=point.id, collector_id=members[n % len(members)].id))
+
+    for kind, build in SEED_FORMS:
+        publish_form(db, campaign, FormKind(kind), build(), f"{kind}.xlsx", actor=None)
 
 
 def main() -> None:

@@ -35,6 +35,12 @@ class Settings(BaseSettings):
 
     max_import_rows: int = 50_000
 
+    # Where uploaded photos are stored (a Docker volume on the pilot server).
+    media_dir: str = "/tmp/ragoh-media"  # noqa: S108
+    max_media_bytes: int = 5 * 1024 * 1024
+    # Max records accepted in one sync push (phones send in batches).
+    max_push_records: int = 500
+
 
 @lru_cache
 def get_settings() -> Settings:

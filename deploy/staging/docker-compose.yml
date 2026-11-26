@@ -33,6 +33,9 @@ services:
       RAGOH_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       RAGOH_DEMO_PASSWORD: ${DEMO_PASSWORD}
       RAGOH_SEED_DEMO: "true"
+      RAGOH_MEDIA_DIR: /data/media
+    volumes:
+      - /opt/ragoh/data/media:/data/media
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_started }
