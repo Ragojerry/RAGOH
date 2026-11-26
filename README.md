@@ -11,4 +11,4 @@ Field supervision, survey and route-tracking system for public health campaigns.
 - [Build specification](docs/BUILD_PROMPT.md)
 - [Progress](docs/PROGRESS.md)
 
-Status: specification ready, build not started.
+Status: AWS + GitHub setup done; architecture (Section 0) in review.
