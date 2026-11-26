@@ -12,7 +12,9 @@ Status: **proposal for review**. Nothing here is built yet. Reply "go" on the pu
 | Existing XLSForm | None | I'll write three seed forms: a household survey, a supervision checklist and a back-check form. |
 
 | Phones | Android (models not specified) | Target Android 8+; Phase 3 field test on the pilot team's own phones. |
-| Integrations | Yes (systems to confirm) | An integration layer is added after Phase 7 (see §11); the data model already keeps stable IDs and timestamps for this. |
+| Integrations | Yes, no preference on which | All three connectors (DHIS2, Elasticsearch/Kibana, DIGIT HCM) are designed as optional, switch-on-per-campaign services built after Phase 7 (§10a). Which ones to build first is decided then. |
+| Pilot area | **FCT Abuja** | OSRM `foot` data built from the FCT area only (Nigeria extract clipped to the FCT boundary); offline map tiles for FCT's six area councils. |
+| Hosting | **Pilot server** | Phase 1 builds §3.3 pilot mode. |
 
 ---
 
