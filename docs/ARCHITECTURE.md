@@ -4,13 +4,25 @@ Status: **proposal for review**. Nothing here is built yet. Reply "go" on the pu
 
 ---
 
+## 0. Answers from review (26 Nov 2026)
+
+| Question | Answer | What it changes |
+|---|---|---|
+| First deployment size | **4 collectors, 2 supervisors** (pilot) | Pilot hosting mode (§3.3) instead of the full ECS stack — much cheaper. Code and schema stay the same, so scaling up later is a hosting change, not a rewrite. |
+| Existing XLSForm | None | I'll write three seed forms: a household survey, a supervision checklist and a back-check form. |
+
+| Phones | Android (models not specified) | Target Android 8+; Phase 3 field test on the pilot team's own phones. |
+| Integrations | Yes (systems to confirm) | An integration layer is added after Phase 7 (see §11); the data model already keeps stable IDs and timestamps for this. |
+
+---
+
 ## 1. Assumptions
 
 Where the spec left a value open, I've assumed the following. Each is easy to change later.
 
 | Area | Assumption |
 |---|---|
-| Scale (first campaign) | Up to 1,000 data collectors, 50 supervisors, 200,000 visit points, ~15 surveys per collector per day |
+| Scale | Pilot: 4 collectors, 2 supervisors. Design target for later: up to 1,000 collectors, 50 supervisors, 200,000 visit points |
 | Team size | A supervisor manages up to 30 collectors |
 | Devices | Android 8+ (API 26+), 2–3 GB RAM, ≥ 2 GB free storage. No iOS in v1 |
 | Offline period | Collectors can work fully offline for 7 days |
@@ -131,6 +143,17 @@ sequenceDiagram
 - **S3**: `ragoh-staging-media`, `ragoh-staging-web`, `ragoh-staging-tiles`, `ragoh-routing-data`.
 - **Rough staging cost: USD 70–95/month** when everything runs 24/7 (load balancer ~18, Fargate ~45, RDS ~15, endpoints/other ~10). To stay under the USD 100 budget, the deploy workflow can **scale staging to zero outside working hours** (one switch).
 - Production (later): Multi-AZ RDS, ElastiCache, NAT or more endpoints, autoscaling, WAF, own domain + ACM certificate.
+
+### 3.3 Pilot hosting mode (recommended for the 4 + 2 pilot)
+The full layout in §3.2 is sized for hundreds of users. For the pilot, one small server runs the same containers:
+
+- **One EC2 instance** `t4g.medium` (2 vCPU, 4 GB RAM, ARM) in a public subnet, running `docker compose`: `api`, `worker`, `redis`, `osrm-foot`, `vroom`, and **Caddy** as the web server with automatic HTTPS (free Let's Encrypt certificate on a free `*.sslip.io` hostname until you have a domain).
+- **RDS PostgreSQL** `db.t4g.micro` (backups, encryption) — or PostgreSQL in a container on the same server to save ~USD 15/month, with nightly backups to S3.
+- **S3 + CloudFront** for the web dashboard, photos and map tiles (pennies at this scale).
+- **OSRM data for the pilot state only** (not all of Nigeria), so it fits comfortably in memory.
+- Deploys still go through GitHub Actions + OIDC: images are pushed to ECR and the server is updated via **AWS Systems Manager** (no SSH keys).
+- **Estimated cost: USD 20–40/month** (EC2 ~25 or less with a savings plan, RDS ~15 or 0 if containerised, rest ~2).
+- **Moving to full mode later** = switching Terraform from the `pilot` module to the `ecs` modules; the containers and database are the same.
 
 ---
 
@@ -318,11 +341,21 @@ Tooling: pnpm workspaces for TypeScript; uv for Python; ruff + mypy; ESLint + Pr
 
 ---
 
+## 10a. Integrations (planned as Phase 7b, after the web dashboard)
+
+Each integration is a separate connector service that reads from RAGOH's database or API and pushes on a schedule, so a failing external system never slows the field app.
+
+| Target | What would flow | How |
+|---|---|---|
+| **DHIS2** | Aggregated indicators (e.g. visits completed, coverage %, flags by type) per ward/LGA per day, or individual events | DHIS2 Web API: `dataValueSets` for aggregates or Tracker/Event API; org-unit mapping table from RAGOH admin areas to DHIS2 org units |
+| **Elasticsearch / Kibana** | Submissions, stops, daily summaries, flags as documents for dashboards | Bulk index on each processed sync (near real time), one index per entity |
+| **DIGIT HCM** | Supervision results and visit status linked to HCM households/boundaries | Via DIGIT HCM APIs once the exact endpoints and auth for your instance are confirmed |
+
 ## 11. Phase 1 plan (on "go")
 
 - Monorepo skeleton and tooling, `docker-compose.yml`
 - Backend: config, DB models for §6.1–6.2 core tables, Alembic migration, auth (JWT + refresh), RBAC with geographic scope, admin APIs for users/teams/areas/visit points (with CSV/XLSX/GeoJSON import), OpenAPI docs, seed data
 - Tests for auth, scope enforcement and imports
-- Terraform for staging (network, ECR, ECS `api` service, RDS, S3, ALB) and `ci.yml` / `deploy.yml`
+- Terraform for staging in **pilot mode** (§3.3: one EC2 server with docker compose + Caddy HTTPS, ECR, S3, SSM-based deploy) and `ci.yml` / `deploy.yml`
 - `docs/DEPLOYMENT.md`
-- **Done when:** merging to `main` deploys the API to AWS staging and `GET /health` returns OK from the load balancer URL; I can log in via the API, upload visit points and see them stored with geometry.
+- **Done when:** merging to `main` deploys the API to AWS staging and `GET /health` returns OK over HTTPS from the staging URL; I can log in via the API, upload visit points and see them stored with geometry.
