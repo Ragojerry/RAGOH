@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "RAGOH",
+    "slug": "ragoh",
+    "scheme": "ragoh",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "android": {
+      "package": "ng.ragoh.app",
+      "versionCode": 2,
+      "adaptiveIcon": {
+        "backgroundColor": "#0F5132",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "RAGOH records your location when you start a shift and fill a survey."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "RAGOH uses the camera for photo questions in surveys."
+        }
+      ],
+      "@maplibre/maplibre-react-native",
+      "expo-status-bar"
+    ],
+    "extra": {
+      "defaultApiUrl": ""
+    }
+  }
+}

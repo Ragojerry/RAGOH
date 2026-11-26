@@ -11,6 +11,7 @@ Field supervision, survey and route-tracking system for public health campaigns.
 - [Build specification](docs/BUILD_PROMPT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Deployment](docs/DEPLOYMENT.md)
+- [Mobile app](docs/MOBILE.md)
 - [Progress](docs/PROGRESS.md)
 
-Status: Phase 1 (backend foundation + AWS staging) in review. See [Deployment](docs/DEPLOYMENT.md).
+Status: Phase 1 (backend + AWS staging) and Phase 2 (offline mobile app) in review.
