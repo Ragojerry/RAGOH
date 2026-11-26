@@ -1,0 +1,38 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.tfvars
+!*.tfvars.example
+*.pem
+*.key
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / mobile
+node_modules/
+dist/
+build/
+.expo/
+*.apk
+*.aab
+
+# Data
+*.osm.pbf
+*.osrm*
+*.pmtiles
+
+# OS
+.DS_Store

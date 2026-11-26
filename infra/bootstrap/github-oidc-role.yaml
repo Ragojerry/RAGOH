@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  RAGOH one-time bootstrap. Lets GitHub Actions in Ragojerry/RAGOH deploy to this
+  AWS account using short-lived OIDC credentials (no stored AWS keys), and creates
+  the S3 bucket for Terraform state. Deploy once from the CloudFormation console.
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Default: Ragojerry
+  GitHubRepo:
+    Type: String
+    Default: RAGOH
+  CreateOIDCProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Set to false if this AWS account already has the token.actions.githubusercontent.com identity provider.
+
+Conditions:
+  MakeProvider: !Equals [!Ref CreateOIDCProvider, "true"]
+
+Resources:
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList: [6938fd4d98bab03faadb97b34396831e3780aea1]
+
+  TerraformStateBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "ragoh-tfstate-${AWS::AccountId}-${AWS::Region}"
+      VersioningConfiguration: { Status: Enabled }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ragoh-github-deploy
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                # Only this repo: main branch, version tags, PRs (for terraform plan) and the production environment.
+                token.actions.githubusercontent.com:sub:
+                  - !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/main"
+                  - !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/tags/v*"
+                  - !Sub "repo:${GitHubOrg}/${GitHubRepo}:pull_request"
+                  - !Sub "repo:${GitHubOrg}/${GitHubRepo}:environment:*"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
+      Policies:
+        - PolicyName: ragoh-scoped-iam
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Terraform may create and manage IAM roles/policies only if their names start with "ragoh-".
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:UpdateRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:ListRoleTags
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListInstanceProfilesForRole
+                  - iam:PassRole
+                  - iam:CreatePolicy
+                  - iam:DeletePolicy
+                  - iam:GetPolicy
+                  - iam:GetPolicyVersion
+                  - iam:CreatePolicyVersion
+                  - iam:DeletePolicyVersion
+                  - iam:ListPolicyVersions
+                  - iam:TagPolicy
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/ragoh-*"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:policy/ragoh-*"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:instance-profile/ragoh-*"
+              - Effect: Allow
+                Action: iam:CreateServiceLinkedRole
+                Resource: "*"
+              # The deploy role must never change itself.
+              - Effect: Deny
+                Action: iam:*
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/ragoh-github-deploy"
+
+Outputs:
+  AwsRoleArn:
+    Description: Put this in the GitHub repo variable AWS_ROLE_ARN
+    Value: !GetAtt DeployRole.Arn
+  AwsRegion:
+    Description: Put this in the GitHub repo variable AWS_REGION
+    Value: !Ref AWS::Region
+  TfStateBucket:
+    Description: Put this in the GitHub repo variable TF_STATE_BUCKET
+    Value: !Ref TerraformStateBucket
