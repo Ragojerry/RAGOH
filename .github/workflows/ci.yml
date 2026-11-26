@@ -69,6 +69,12 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.10.5"
-      - run: terraform fmt -check -recursive ../..
+      - name: terraform fmt
+        run: |
+          if ! terraform fmt -check -recursive ../..; then
+            terraform fmt -recursive ../..
+            echo "::error title=terraform fmt::Run terraform fmt. Diff:%0A$(git diff | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"
+            exit 1
+          fi
       - run: terraform init -backend=false
       - run: terraform validate

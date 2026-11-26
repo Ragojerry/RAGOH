@@ -35,11 +35,11 @@ provider "aws" {
 
 data "aws_caller_identity" "current" {}
 
+# host: free HTTPS hostname that resolves to the server's IP, e.g. 13-48-10-20.sslip.io
 locals {
   name       = "ragoh-staging"
   account_id = data.aws_caller_identity.current.account_id
-  # Free HTTPS hostname that resolves to the server's IP, e.g. 13-48-10-20.sslip.io
-  host = var.domain_name != "" ? var.domain_name : "${replace(aws_eip.server.public_ip, ".", "-")}.sslip.io"
+  host       = var.domain_name != "" ? var.domain_name : "${replace(aws_eip.server.public_ip, ".", "-")}.sslip.io"
 }
 
 # ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ resource "aws_ecr_repository" "api" {
 
 resource "aws_ecr_lifecycle_policy" "api" {
   repository = aws_ecr_repository.api.name
-  policy = jsonencode({
+  policy     = jsonencode({
     rules = [{
       rulePriority = 1
       description  = "Keep the 20 most recent images"
@@ -160,8 +160,8 @@ resource "random_password" "secret" {
     ADMIN_PASSWORD = 20
     DEMO_PASSWORD  = 16
   }
-  length  = each.value
-  special = false
+  length   = each.value
+  special  = false
 }
 
 resource "aws_ssm_parameter" "secret" {
@@ -176,9 +176,9 @@ resource "aws_ssm_parameter" "secret" {
 # Server identity: SSM management, ECR pull, deploy bundle read, backups write, secrets read
 # ---------------------------------------------------------------------------
 resource "aws_iam_role" "server" {
-  name = "${local.name}-server"
+  name               = "${local.name}-server"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version   = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
       Principal = { Service = "ec2.amazonaws.com" }
@@ -198,10 +198,10 @@ resource "aws_iam_role_policy_attachment" "ecr_read" {
 }
 
 resource "aws_iam_role_policy" "server" {
-  name = "${local.name}-server-access"
-  role = aws_iam_role.server.id
+  name   = "${local.name}-server-access"
+  role   = aws_iam_role.server.id
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version   = "2012-10-17"
     Statement = [
       {
         Effect   = "Allow"
