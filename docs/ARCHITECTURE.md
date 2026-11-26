@@ -34,7 +34,7 @@ Where the spec left a value open, I've assumed the following. Each is easy to ch
 | Languages | English in v1; text externalised for Hausa, Yoruba, Igbo and Pidgin |
 | Forms | XLSForm (ODK/Kobo style) as the authoring format, with the common subset listed in §6.4 |
 | Hosting | One AWS staging environment in eu-north-1 (Stockholm); production is added later once you upgrade from the AWS free plan |
-| Domain | None yet; staging uses the AWS load balancer URL over HTTPS once a domain is added (HTTP until then, staging only) |
+| Domain | None yet; the pilot uses a free `*.sslip.io` hostname with an automatic HTTPS certificate |
 | Integrations | DHIS2, Elasticsearch/Kibana and KoboToolbox: designed for (clean export APIs), not built in v1 |
 
 ---
