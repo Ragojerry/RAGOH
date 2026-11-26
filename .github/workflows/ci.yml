@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (lint, types, tests)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ragoh
+          POSTGRES_PASSWORD: ragoh
+          POSTGRES_DB: ragoh_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ragoh" --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      RAGOH_TEST_DATABASE_URL: postgresql+psycopg://ragoh:ragoh@localhost:5432/ragoh_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy app
+      - run: uv run pytest
+      - name: Migrations are in sync with models
+        env:
+          RAGOH_DATABASE_URL: postgresql+psycopg://ragoh:ragoh@localhost:5432/ragoh_test
+        run: |
+          psql postgresql://ragoh:ragoh@localhost:5432/ragoh_test -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+          uv run alembic upgrade head
+          uv run alembic check
+
+  docker:
+    name: API image builds
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  terraform:
+    name: Terraform (format & validate)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: infra/terraform/envs/staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+      - run: terraform fmt -check -recursive ../..
+      - run: terraform init -backend=false
+      - run: terraform validate

@@ -1,0 +1,48 @@
+# Local / cloud-session development stack.
+#   docker compose up -d        → API on http://localhost:8000/docs
+# Demo logins: admin / admin-local-password ; sup1, col1… / demo-local-password
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ragoh
+      POSTGRES_PASSWORD: ragoh
+      POSTGRES_DB: ragoh
+    ports: ["5432:5432"]
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ragoh"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ragoh
+      MINIO_ROOT_PASSWORD: ragoh-minio-password
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [minio-data:/data]
+
+  api:
+    build: ./backend
+    environment:
+      RAGOH_ENV: local
+      RAGOH_DATABASE_URL: postgresql+psycopg://ragoh:ragoh@db:5432/ragoh
+      RAGOH_REDIS_URL: redis://redis:6379/0
+      RAGOH_JWT_SECRET: local-development-secret-not-for-production
+      RAGOH_ADMIN_PASSWORD: admin-local-password
+      RAGOH_DEMO_PASSWORD: demo-local-password
+      RAGOH_SEED_DEMO: "true"
+    ports: ["8000:8000"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+
+volumes:
+  db-data:
+  minio-data:

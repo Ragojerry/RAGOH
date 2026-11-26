@@ -1,0 +1,51 @@
+# Staging (pilot mode) stack, run on the single EC2 server by deploy.sh.
+# Values come from /opt/ragoh/.env, written by deploy.sh from SSM Parameter Store.
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ragoh
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ragoh
+    volumes:
+      - /opt/ragoh/data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ragoh"]
+      interval: 5s
+      retries: 30
+    mem_limit: 512m
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb"]
+    mem_limit: 96m
+
+  api:
+    image: ${API_IMAGE}
+    restart: unless-stopped
+    environment:
+      RAGOH_ENV: staging
+      RAGOH_DATABASE_URL: postgresql+psycopg://ragoh:${DB_PASSWORD}@db:5432/ragoh
+      RAGOH_REDIS_URL: redis://redis:6379/0
+      RAGOH_JWT_SECRET: ${JWT_SECRET}
+      RAGOH_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      RAGOH_DEMO_PASSWORD: ${DEMO_PASSWORD}
+      RAGOH_SEED_DEMO: "true"
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+    mem_limit: 512m
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      RAGOH_HOST: ${RAGOH_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /opt/ragoh/data/caddy:/data
+    depends_on: [api]
+    mem_limit: 128m
