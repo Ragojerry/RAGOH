@@ -1,3 +1,5 @@
+// Registers the background location task at startup (required for headless runs).
+import "@/lib/tracking";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, View } from "react-native";

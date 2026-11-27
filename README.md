@@ -14,4 +14,4 @@ Field supervision, survey and route-tracking system for public health campaigns.
 - [Mobile app](docs/MOBILE.md)
 - [Progress](docs/PROGRESS.md)
 
-Status: Phase 1 (backend + AWS staging) and Phase 2 (offline mobile app) in review.
+Status: Phases 1–3 (backend + AWS staging, offline mobile app, GPS tracking + stops) in review.

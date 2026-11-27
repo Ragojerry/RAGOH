@@ -3,7 +3,10 @@ import { useCallback, useState } from "react";
 import { Alert, RefreshControl, ScrollView, Text, View } from "react-native";
 import { Button, Card, Chip, ErrorText, H1, Label, Muted, colors, styles } from "@/components/ui";
 import { currentLocation } from "@/lib/location";
-import { activeShift, endShift, listAssignments, listForms, startShift } from "@/lib/repo";
+import { NOTICE_TEXT, hasConsented, recordConsent } from "@/lib/consent";
+import { getMeta, setMeta } from "@/lib/db";
+import { activeShift, listAssignments, listForms } from "@/lib/repo";
+import { beginShift, finishShift, openBatterySettings, trackingStats } from "@/lib/tracking";
 import { useSession } from "@/lib/session";
 import { DONE_STATUSES, type FormInfo, type Shift } from "@/lib/types";
 
@@ -22,9 +25,11 @@ export default function Home() {
   const [counts, setCounts] = useState({ total: 0, done: 0 });
   const [otherForms, setOtherForms] = useState<FormInfo[]>([]);
   const [busy, setBusy] = useState(false);
+  const [tracking, setTracking] = useState<{ running: boolean; lastFixAt: string | null; pointsToday: number } | null>(null);
 
   const load = useCallback(async () => {
     setShift(await activeShift());
+    setTracking(await trackingStats());
     const a = await listAssignments();
     setCounts({ total: a.length, done: a.filter((x) => DONE_STATUSES.includes(x.status)).length });
     // Supervisors fill checklists that aren't tied to a visit point.
@@ -33,7 +38,33 @@ export default function Home() {
 
   useFocusEffect(useCallback(() => { load(); }, [load, sync.lastOkAt]));
 
+  const ask = (title: string, message: string, ok: string) =>
+    new Promise<boolean>((resolve) =>
+      Alert.alert(title, message, [
+        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+        { text: ok, onPress: () => resolve(true) },
+      ]),
+    );
+
   const toggleShift = async () => {
+    if (!shift) {
+      if (!(await hasConsented())) {
+        if (!(await ask("Location while on shift", NOTICE_TEXT, "I understand"))) return;
+        await recordConsent();
+      }
+      if (!(await getMeta("battery_tip_shown"))) {
+        await setMeta("battery_tip_shown", "1");
+        const open = await ask(
+          "Keep tracking on",
+          "Some phones stop apps in the background to save battery. Find RAGOH in the next screen and choose \"Don't optimise\" / \"Allow\". Then come back and start your shift.",
+          "Open settings",
+        );
+        if (open) {
+          await openBatterySettings();
+          return;
+        }
+      }
+    }
     setBusy(true);
     try {
       const loc = await currentLocation();
@@ -41,8 +72,19 @@ export default function Home() {
         Alert.alert("Location needed", "Turn on location (GPS) and allow RAGOH to use it, then try again.");
         return;
       }
-      if (shift) await endShift(shift.id, loc);
-      else await startShift(loc);
+      if (shift) {
+        await finishShift(shift.id, loc);
+      } else {
+        const { tracking: t } = await beginShift(loc);
+        if (t === "no_background_permission") {
+          Alert.alert(
+            "Allow location all the time",
+            "Your shift has started, but tracking needs location access \"Allow all the time\". Open RAGOH's app settings → Permissions → Location and choose it.",
+          );
+        } else if (t === "gps_off") {
+          Alert.alert("GPS is off", "Turn on Location in your phone's quick settings.");
+        }
+      }
       await load();
       runSync();
     } finally {
@@ -69,6 +111,13 @@ export default function Home() {
           <Chip text={shift ? "On shift" : "Not started"} tone={shift ? "ok" : "neutral"} />
         </View>
         {shift ? <Muted>Started at {new Date(shift.started_at).toLocaleTimeString()}</Muted> : <Muted>Start your shift before your first visit.</Muted>}
+        {shift && tracking && (
+          tracking.running ? (
+            <Muted>Location tracking on · {tracking.pointsToday} points today · last {timeAgo(tracking.lastFixAt)}</Muted>
+          ) : (
+            <ErrorText>Location tracking is not running. Check that GPS is on and location is allowed "all the time".</ErrorText>
+          )
+        )}
         <Button title={shift ? "End shift" : "Start shift"} variant={shift ? "secondary" : "primary"} onPress={shift ? confirmEnd : toggleShift} loading={busy} />
       </Card>
 

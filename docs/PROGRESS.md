@@ -4,8 +4,8 @@
 |---|---|
 | Section 0 — Architecture & plan | Done (approved 26 Nov 2026) |
 | 1 — Foundation + AWS staging deploy | In review (PR #2) |
-| 2 — Mobile core (offline) | **In review** (PR) |
-| 3 — Tracking + stops | Not started |
+| 2 — Mobile core (offline) | In review (PR #3) |
+| 3 — Tracking + stops | **In review** (PR) |
 | 4 — Routing | Not started |
 | 5 — Flags + follow-up | Not started |
 | 6 — Supervisor mobile mode | Not started |
@@ -29,6 +29,12 @@
 - `apps/mobile` (Expo SDK 58, Expo Router): online sign-in + offline PIN unlock, shared-phone protection, encrypted SQLite (SQLCipher), shifts with GPS, points list (nearest first) + map, point outcomes (not found / refused / skip), form filling with autosave drafts, photos (resized), My day, settings, automatic sync.
 - CI: TypeScript type checks + tests + Android bundle; APK built on GitHub runners (`.github/workflows/mobile.yml`). Guide: `docs/MOBILE.md`.
 
+## Phase 3 — what's built
+- Phone: background GPS tracking during shifts only (Android foreground service), adaptive sampling (≈10 s moving / ≈90 s still), mock-location flag, battery and network type per point, auto-restart when the app was killed, GPS-off and tracking-restart events, 12-hour shift auto-end, one-time location notice (NDPA) and battery-optimisation tip, tracking status on the home screen.
+- Server: monthly-partitioned GPS storage with idempotent bulk insert, device events, stop detection, stop classification and survey linking, gap detection inside shifts, daily collector summaries recomputed after every sync, `GET /collectors/{id}/day` (summary, stops, simplified track, surveys, phone events — scoped and audited), recompute endpoint, consent record, 90-day raw GPS retention job (daily cron).
+- GPS simulator (`backend/app/simulator.py`, guide in `tools/gps-simulator/`) with honest / cheater / spoofer / gaps / jitter scenarios, used by the tests and runnable against staging.
+- Tests: 60 backend (22 new for tracking), 11 sync engine. ADR 004.
+
 ## Decisions
 - AWS region eu-north-1 (Stockholm) — the account is on the AWS free plan, which only allows this region.
 - AWS bootstrap done: OIDC role `ragoh-github-deploy`, state bucket `ragoh-tfstate-568898409880-eu-north-1`, budget `ragoh-monthly` (USD 100). GitHub variables and `production` environment set.
@@ -43,3 +49,4 @@
 - Photos inside repeat groups are not uploaded yet (server accepts top-level photo fields only).
 - APK is signed with the default debug key — fine for the pilot; a proper release key is needed before wider distribution (Phase 8).
 - Barcode questions are typed by hand (camera scanning later).
+- Background tracking has not been field-tested yet: test on the pilot team's actual phones (battery savers on Tecno/Infinix/itel are the main risk). Tracking does not restart by itself after a phone reboot until the app is opened.

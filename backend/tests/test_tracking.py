@@ -262,3 +262,25 @@ def test_recompute_and_consent(client: TestClient, placed: dict) -> None:
         ).status_code
         == 204
     )
+
+
+def test_retention_removes_only_old_raw_points(
+    client: TestClient, placed: dict, db: Session
+) -> None:
+    from app.maintenance import apply_retention
+
+    h = auth(client, "col_a")
+    old = (datetime.now(UTC) - timedelta(days=100)).isoformat()
+    new = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    pts = [{"id": str(uuid.uuid4()), "recorded_at": t, "lat": 8.25, "lon": 7.1} for t in (old, new)]
+    body = {
+        "device": {"id": str(uuid.uuid4())},
+        "device_time": datetime.now(UTC).isoformat(),
+        "gps_points": pts,
+    }
+    assert client.post("/api/v1/sync/push", json=body, headers=h).status_code == 200
+    # Run inside a savepoint so the test transaction (and partitions) roll back afterwards.
+    db.commit = db.flush  # type: ignore[method-assign]
+    result = apply_retention(db, days=90)
+    assert result["deleted_points"] + result["dropped_partitions"] >= 1
+    assert db.scalar(select(func.count()).select_from(GpsPoint)) == 1

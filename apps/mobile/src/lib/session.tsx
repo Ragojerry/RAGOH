@@ -5,7 +5,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { SyncReport } from "@ragoh/sync-core";
 import { login, logoutRemote } from "./api";
 import { clearUserData, getMeta } from "./db";
-import { outboxCounts } from "./repo";
+import { outboxCounts, pruneOutbox } from "./repo";
+import { ensureTracking } from "./tracking";
+import { sendPendingConsent } from "./consent";
 import { cachedUser, deviceId, pin as pinStore, tokens } from "./secure";
 import { friendlySyncError, onSync, syncNow } from "./sync";
 import type { User } from "./types";
@@ -54,6 +56,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       const r = await syncNow();
       setSync((s) => ({ ...s, error: friendlySyncError(r) }));
+      await pruneOutbox().catch(() => undefined);
+      if (r && !r.error) await sendPendingConsent();
       return r;
     } catch (err) {
       setSync((s) => ({ ...s, error: err instanceof Error ? err.message : String(err) }));
@@ -81,9 +85,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (phase !== "ready") return;
     refreshCounts();
+    ensureTracking().catch(() => undefined); // restart tracking if the app was killed mid-shift
     runSync();
     const timer = setInterval(() => phaseRef.current === "ready" && runSync(), AUTO_SYNC_MS);
-    const appSub = AppState.addEventListener("change", (s) => s === "active" && runSync());
+    const appSub = AppState.addEventListener("change", (s) => {
+      if (s !== "active") return;
+      ensureTracking().catch(() => undefined);
+      runSync();
+    });
     const netSub = Network.addNetworkStateListener((st) => st.isInternetReachable && runSync());
     const unsub = onSync(() => refreshCounts());
     return () => {

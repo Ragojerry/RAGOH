@@ -31,12 +31,14 @@ class FakeServer implements Transport {
     if (n > this.maxBatch) throw new HttpError(413, "too many");
     this.pushes.push(body);
     const result: PushResult = { server_time: "", accepted: { shifts: [], submissions: [], assignment_updates: [] }, rejected: [] };
-    for (const [key, list] of [["shifts", body.shifts], ["submissions", body.submissions], ["assignment_updates", body.assignment_updates]] as const) {
+    result.accepted.gps_points = [];
+    result.accepted.device_events = [];
+    for (const [key, list] of [["shifts", body.shifts], ["submissions", body.submissions], ["assignment_updates", body.assignment_updates], ["gps_points", body.gps_points], ["device_events", body.device_events]] as const) {
       for (const rec of list) {
         const id = String(rec.id);
         if (this.reject.has(id)) { result.rejected.push({ kind: key, id, error: "assignment is not yours" }); continue; }
         if (!this.stored.has(id) || key === "shifts") this.stored.set(id, rec);
-        result.accepted[key].push(id);
+        result.accepted[key]!.push(id);
       }
     }
     return result;
@@ -175,6 +177,18 @@ describe("sync engine", () => {
     store.enqueue("submission", "sub1", sub("sub1"));
     const r = await new SyncEngine(store, server, device).run();
     expect(r.blocked).toBe(true);
+  });
+
+  it("sends GPS points and phone events with the rest of the outbox", async () => {
+    const store = new MemoryStore();
+    const server = new FakeServer();
+    for (let i = 0; i < 1200; i++) store.enqueue("gps_point", `g${i}`, { recorded_at: `t${i}`, lat: 9, lon: 7 });
+    store.enqueue("device_event", "e1", { type: "gps_off", occurred_at: "t5" });
+    const report = await new SyncEngine(store, server, device).run();
+    expect(report.pushed).toBe(1201);
+    expect(server.pushes.length).toBe(3); // default batch of 500
+    expect(server.pushes.flatMap((p) => p.device_events)).toHaveLength(1);
+    expect(report.remaining).toBe(0);
   });
 
   it("shares one run between concurrent callers", async () => {

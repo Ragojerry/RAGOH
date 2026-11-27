@@ -51,5 +51,11 @@ cat > /etc/cron.d/ragoh-backup <<EOF
 EOF
 chmod 644 /etc/cron.d/ragoh-backup
 
+# Daily: delete raw GPS older than the retention period (stops and summaries are kept).
+cat > /etc/cron.d/ragoh-maintenance <<EOF
+45 2 * * * root cd $APP_DIR && docker compose exec -T api python -m app.maintenance retention >> /var/log/ragoh-maintenance.log 2>&1
+EOF
+chmod 644 /etc/cron.d/ragoh-maintenance
+
 docker image prune -f >/dev/null
 echo "Deployed $API_IMAGE to https://$RAGOH_HOST"

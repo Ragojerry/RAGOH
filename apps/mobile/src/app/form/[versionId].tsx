@@ -22,7 +22,8 @@ import {
 import { Question } from "@/components/Question";
 import { Button, Card, ErrorText, H1, Muted, colors, styles } from "@/components/ui";
 import { currentLocation } from "@/lib/location";
-import { activeShift, finishSubmission, findDraft, getAssignment, getForm, newId, saveDraft, startShift, type Draft } from "@/lib/repo";
+import { activeShift, finishSubmission, findDraft, getAssignment, getForm, newId, saveDraft, type Draft } from "@/lib/repo";
+import { beginShift } from "@/lib/tracking";
 import { useSession } from "@/lib/session";
 import type { Assignment, FormInfo } from "@/lib/types";
 
@@ -108,7 +109,7 @@ export default function FormScreen() {
     try {
       let shift = await activeShift();
       const endLocation = await currentLocation();
-      if (!shift) shift = await startShift(endLocation); // working without a shift: start one automatically
+      if (!shift) shift = (await beginShift(endLocation)).shift; // working without a shift: start one automatically
       // Photos are stored by top-level field name; nested repeat photos keep their path.
       const answers = finalizeAnswers(schema, draft.answers);
       const media = Object.fromEntries(Object.entries(draft.media).filter(([path]) => getAnswer(answers, path) !== undefined));

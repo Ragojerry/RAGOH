@@ -9,7 +9,7 @@
  * A network failure stops the run and leaves everything queued for next time.
  */
 
-export type OutboxKind = "shift" | "submission" | "assignment_update";
+export type OutboxKind = "shift" | "submission" | "assignment_update" | "gps_point" | "device_event";
 
 export interface OutboxItem {
   /** Client UUID of the record (shift id, submission id, status-change id). */
@@ -40,11 +40,19 @@ export interface PushBody {
   shifts: Record<string, unknown>[];
   submissions: Record<string, unknown>[];
   assignment_updates: Record<string, unknown>[];
+  gps_points: Record<string, unknown>[];
+  device_events: Record<string, unknown>[];
 }
 
 export interface PushResult {
   server_time: string;
-  accepted: { shifts: string[]; submissions: string[]; assignment_updates: string[] };
+  accepted: {
+    shifts: string[];
+    submissions: string[];
+    assignment_updates: string[];
+    gps_points?: string[];
+    device_events?: string[];
+  };
   rejected: Rejection[];
 }
 
@@ -108,14 +116,18 @@ export interface SyncOptions {
   now?: () => Date;
 }
 
-const KEY: Record<OutboxKind, keyof PushResult["accepted"]> = {
+const KEY: Record<OutboxKind, "shifts" | "submissions" | "assignment_updates" | "gps_points" | "device_events"> = {
   shift: "shifts",
   submission: "submissions",
   assignment_update: "assignment_updates",
+  gps_point: "gps_points",
+  device_event: "device_events",
 };
 
 export function buildPushBody(device: PushBody["device"], items: OutboxItem[], now: Date): PushBody {
-  const body: PushBody = { device, device_time: now.toISOString(), shifts: [], submissions: [], assignment_updates: [] };
+  const body: PushBody = {
+    device, device_time: now.toISOString(), shifts: [], submissions: [], assignment_updates: [], gps_points: [], device_events: [],
+  };
   for (const it of items) body[KEY[it.kind]].push({ ...it.payload, id: it.id });
   return body;
 }
@@ -165,7 +177,7 @@ export class SyncEngine {
 
   private async doRun(): Promise<SyncReport> {
     const now = this.opts.now ?? (() => new Date());
-    let batchSize = this.opts.batchSize ?? 100;
+    let batchSize = this.opts.batchSize ?? 500;
     const report: SyncReport = { pushed: 0, rejected: [], mediaUploaded: 0, pulled: false, remaining: 0 };
 
     // 1. Push the outbox in batches.
@@ -186,7 +198,10 @@ export class SyncEngine {
         report.remaining = await this.store.pendingCount();
         return report;
       }
-      const accepted = [...result.accepted.shifts, ...result.accepted.submissions, ...result.accepted.assignment_updates];
+      const a = result.accepted;
+      const accepted = [
+        ...a.shifts, ...a.submissions, ...a.assignment_updates, ...(a.gps_points ?? []), ...(a.device_events ?? []),
+      ];
       const rejectedIds = new Set(result.rejected.map((r) => r.id));
       // Anything the server neither accepted nor rejected stays queued (defensive).
       await this.store.markSynced(accepted);

@@ -194,11 +194,20 @@ export async function submissionLog(sinceIso: string): Promise<LogEntry[]> {
 
 export async function outboxCounts(): Promise<{ pending: number; rejected: number; media: number }> {
   const db = await getDb();
+  // GPS points are counted separately so "3 waiting" means work the collector did, not fixes.
   const r = await db.getFirstAsync<{ pending: number; rejected: number }>(
-    "SELECT SUM(state = 'pending') AS pending, SUM(state = 'rejected') AS rejected FROM outbox",
+    "SELECT SUM(state = 'pending' AND kind NOT IN ('gps_point', 'device_event')) AS pending, SUM(state = 'rejected') AS rejected FROM outbox",
   );
   const m = await db.getFirstAsync<{ n: number }>("SELECT COUNT(*) AS n FROM media WHERE uploaded = 0");
   return { pending: r?.pending ?? 0, rejected: r?.rejected ?? 0, media: m?.n ?? 0 };
+}
+
+/** Synced GPS points and events aren't shown anywhere; drop them after a day to save space. */
+export async function pruneOutbox(): Promise<void> {
+  const db = await getDb();
+  const cutoff = new Date(Date.now() - 24 * 3600_000).toISOString();
+  await db.runAsync("DELETE FROM outbox WHERE state = 'synced' AND kind IN ('gps_point', 'device_event') AND created_at < ?", [cutoff]);
+  await db.runAsync("DELETE FROM meta WHERE key LIKE 'gps_count_%' AND key < ?", [`gps_count_${cutoff.slice(0, 10)}`]);
 }
 
 // --- SyncStore over SQLite ------------------------------------------------------------
@@ -212,7 +221,9 @@ export const sqliteSyncStore: SyncStore = {
     return rows.map((r): OutboxItem => ({ id: r.id, kind: r.kind, payload: JSON.parse(r.payload), createdAt: r.created_at, attempts: r.attempts }));
   },
   async pendingCount() {
-    return (await outboxCounts()).pending;
+    const db = await getDb();
+    const r = await db.getFirstAsync<{ n: number }>("SELECT COUNT(*) AS n FROM outbox WHERE state = 'pending'");
+    return r?.n ?? 0;
   },
   async markSynced(ids) {
     if (!ids.length) return;
