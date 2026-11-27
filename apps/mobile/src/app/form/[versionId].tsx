@@ -28,7 +28,7 @@ import { useSession } from "@/lib/session";
 import type { Assignment, FormInfo } from "@/lib/types";
 
 export default function FormScreen() {
-  const { versionId, assignmentId } = useLocalSearchParams<{ versionId: string; assignmentId?: string }>();
+  const { versionId, assignmentId, prefill } = useLocalSearchParams<{ versionId: string; assignmentId?: string; prefill?: string }>();
   const navigation = useNavigation();
   const { runSync } = useSession();
   const [form, setForm] = useState<FormInfo | null>(null);
@@ -50,8 +50,16 @@ export default function FormScreen() {
       navigation.setOptions({ title: f.name });
       const a = assignmentId ? await getAssignment(assignmentId) : null;
       setAssignment(a);
+      // Answers filled in by the screen that opened the form (e.g. which collector a spot check is about).
+      let preset: Record<string, string> = {};
+      try {
+        preset = prefill ? (JSON.parse(prefill) as Record<string, string>) : {};
+      } catch {
+        preset = {};
+      }
       const existing = await findDraft(f.version_id, assignmentId ?? null);
-      if (existing) {
+      const sameSubject = existing && Object.entries(preset).every(([k, v]) => existing.answers[k] === v);
+      if (existing && sameSubject) {
         setDraft(existing);
       } else {
         const d: Draft = {
@@ -60,7 +68,7 @@ export default function FormScreen() {
           assignmentId: assignmentId ?? null,
           startedAt: new Date().toISOString(),
           startLocation: null,
-          answers: {},
+          answers: { ...preset },
           media: {},
         };
         setDraft(d);
@@ -69,7 +77,7 @@ export default function FormScreen() {
         currentLocation().then((loc) => setDraft((cur) => (cur ? { ...cur, startLocation: loc } : cur)));
       }
     })();
-  }, [versionId, assignmentId, navigation]);
+  }, [versionId, assignmentId, prefill, navigation]);
 
   // Debounced autosave.
   useEffect(() => {

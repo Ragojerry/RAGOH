@@ -3,12 +3,12 @@
     "name": "RAGOH",
     "slug": "ragoh",
     "scheme": "ragoh",
-    "version": "0.5.0",
+    "version": "0.6.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "android": {
       "package": "ng.ragoh.app",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "backgroundColor": "#0F5132",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -21,7 +21,8 @@
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
-        "CAMERA"
+        "CAMERA",
+        "POST_NOTIFICATIONS"
       ],
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
@@ -61,7 +62,21 @@
         }
       ],
       "@maplibre/maplibre-react-native",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "RAGOH uses the camera for photo questions and to receive data from a collector's phone.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0F5132"
+        }
+      ]
     ],
     "extra": {
       "defaultApiUrl": ""

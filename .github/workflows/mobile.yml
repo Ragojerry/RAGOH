@@ -54,17 +54,30 @@ jobs:
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
       - run: pnpm install --frozen-lockfile
+      - name: Push notification credentials (optional)
+        env:
+          GOOGLE_SERVICES_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_B64" ]; then
+            echo "$GOOGLE_SERVICES_B64" | base64 -d > "$RUNNER_TEMP/google-services.json"
+            echo "GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
+            echo "Push notifications: enabled" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Push notifications: not configured (in-app alerts only) — see docs/MOBILE.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Generate native Android project
         working-directory: apps/mobile
         env:
           EXPO_OFFLINE: "1"
           CI: "1"
+          EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
         run: npx expo prebuild --platform android --no-install
       - name: Build release APK
         working-directory: apps/mobile/android
         env:
           # Optional: bake in the server address so users don't have to type it.
           EXPO_PUBLIC_API_URL: ${{ vars.RAGOH_API_URL }}
+          EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
           NODE_ENV: production
         run: |
           ./gradlew assembleRelease --no-daemon \

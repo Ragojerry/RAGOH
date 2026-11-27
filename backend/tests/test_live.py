@@ -427,3 +427,47 @@ def test_route_between_two_positions(client: TestClient, world: dict) -> None:
     )
     assert r.status_code == 200
     assert r.json()["distance_m"] > 1000
+
+
+# Produced by packages/sync-core (noble chacha20poly1305 + fflate zlib) with key = bytes 0..31,
+# nonce = bytes 100..111. Proves the phone's sealing and the server's opening agree.
+TS_NONCE = "ZGVmZ2hpamtsbW5v"
+TS_CIPHERTEXT = (
+    "TMvmRUPPtWL3WEoaCjPCHQMI+ZjIS8hV5lhwiMuDl+vvVoxF2m1ii115P6QX1I3O65WsBrGnL99uEZG7aDsB6TPt"
+    "9zbeEktr3nDaLskiYQzXUV7TQ0GEYNFaPbvtkYCro3C5XDZIm3g4k1j11hCScP58nBL0izfQU1uu+EJLFuxX4r63"
+    "/WNek1fZUA4inKhOXP1j9B5Qem0Fe5W51EX1QzDUvwv+/v9wEoG26SjpxsrRu/vaNLJnKzc9RiwcM0/j7Fi6tshT"
+    "fbvqI34UbGsCGXb6UJgBWB4ywWcdTbHyslKcxtSKOQLtwsTc/+tSVBAKsQqSKdTDyb66fqlj9N8="
+)
+
+
+def test_server_opens_a_bundle_sealed_by_the_phone_library() -> None:
+    from app.api.v1.sync import open_relay
+    from app.schemas import RelayIn
+
+    relay = RelayIn(
+        id=uuid.uuid4(),
+        collector_id=uuid.UUID("6f1c2a9e-4b7d-4c1e-9a3f-2d8e5b6a7c90"),
+        nonce=TS_NONCE,
+        ciphertext=TS_CIPHERTEXT,
+        scanned_at=datetime.now(UTC),
+    )
+    body = open_relay(bytes(range(32)), relay)
+    assert body.messages[0].body == "from TS"
+    assert str(body.device.id) == "0b9c2f5e-1d2a-4e3b-8c4d-5e6f7a8b9c0d"
+
+
+def test_supervisor_phone_messages_only_reach_visible_users(
+    client: TestClient, world: dict
+) -> None:
+    now = datetime.now(UTC).isoformat()
+    ok, bad = str(uuid.uuid4()), str(uuid.uuid4())
+    r = client.post(
+        f"{API}/sync/push",
+        json={"device": {"id": str(uuid.uuid4())}, "device_time": now, "messages": [
+            {"id": ok, "recipient_id": str(world["col_a"].id), "body": "hi", "sent_at": now},
+            {"id": bad, "recipient_id": str(world["col_b"].id), "body": "hi", "sent_at": now},
+        ]},
+        headers=auth(client, "sup_a"),
+    )  # fmt: skip
+    assert r.json()["accepted"]["messages"] == [ok]
+    assert r.json()["rejected"][0]["id"] == bad

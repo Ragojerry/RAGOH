@@ -81,6 +81,7 @@ from app.schemas import (
 from app.services.audit import audit
 from app.services.geo import point_wkt
 from app.services.push import deliver_pending
+from app.services.scope import visible_user_ids_condition
 from app.services.tracking import (
     DEFAULT_TZ,
     SessionFactory,
@@ -420,6 +421,11 @@ def apply_records(
             rejected.append(
                 RejectedItem(kind="message", id=pm.id, error="recipient is not your supervisor")
             )
+            continue
+        if user.role != Role.collector and not db.scalar(
+            select(User.id).where(User.id == pm.recipient_id, visible_user_ids_condition(db, user))
+        ):
+            rejected.append(RejectedItem(kind="message", id=pm.id, error="recipient not found"))
             continue
         db.add(
             Message(

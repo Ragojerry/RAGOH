@@ -29,6 +29,15 @@ const OSM_STYLE: StyleSpecification = {
   ],
 };
 
+/** Self-hosted (offline-capable) style when available, else OpenStreetMap online tiles. */
+export function useMapStyle(): string | StyleSpecification | null {
+  const [style, setStyle] = useState<string | StyleSpecification | null>(null);
+  useEffect(() => {
+    mapStyleUrl().then((url) => setStyle(url ?? OSM_STYLE));
+  }, []);
+  return style;
+}
+
 export function PointsMap({
   assignments, me, onSelect, route, order, zoom = 14,
 }: {
@@ -41,10 +50,7 @@ export function PointsMap({
   order?: Record<string, number>;
   zoom?: number;
 }) {
-  const [style, setStyle] = useState<string | StyleSpecification | null>(null);
-  useEffect(() => {
-    mapStyleUrl().then((url) => setStyle(url ?? OSM_STYLE));
-  }, []);
+  const style = useMapStyle();
 
   const first = assignments[0]?.visit_point;
   const center: [number, number] = me ? [me.lon, me.lat] : first ? [first.lon, first.lat] : [7.49, 9.06];

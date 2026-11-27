@@ -9,7 +9,10 @@
  * A network failure stops the run and leaves everything queued for next time.
  */
 
-export type OutboxKind = "shift" | "submission" | "assignment_update" | "gps_point" | "device_event" | "message" | "flag_reply";
+export type OutboxKind =
+  | "shift" | "submission" | "assignment_update" | "gps_point" | "device_event" | "message" | "flag_reply"
+  /** A sealed bundle carried for another user (supervisor phones only). */
+  | "relay";
 
 export interface OutboxItem {
   /** Client UUID of the record (shift id, submission id, status-change id). */
@@ -44,6 +47,7 @@ export interface PushBody {
   device_events: Record<string, unknown>[];
   messages: Record<string, unknown>[];
   flag_replies: Record<string, unknown>[];
+  relays?: Record<string, unknown>[];
 }
 
 export interface PushResult {
@@ -56,6 +60,7 @@ export interface PushResult {
     device_events?: string[];
     messages?: string[];
     flag_replies?: string[];
+    relays?: string[];
   };
   rejected: Rejection[];
 }
@@ -120,7 +125,7 @@ export interface SyncOptions {
   now?: () => Date;
 }
 
-type PushKey = "shifts" | "submissions" | "assignment_updates" | "gps_points" | "device_events" | "messages" | "flag_replies";
+type PushKey = "shifts" | "submissions" | "assignment_updates" | "gps_points" | "device_events" | "messages" | "flag_replies" | "relays";
 const KEY: Record<OutboxKind, PushKey> = {
   shift: "shifts",
   submission: "submissions",
@@ -129,14 +134,21 @@ const KEY: Record<OutboxKind, PushKey> = {
   device_event: "device_events",
   message: "messages",
   flag_reply: "flag_replies",
+  relay: "relays",
 };
+/** The server takes at most this many relays per push; the rest wait for the next batch. */
+export const MAX_RELAYS_PER_PUSH = 20;
 
 export function buildPushBody(device: PushBody["device"], items: OutboxItem[], now: Date): PushBody {
   const body: PushBody = {
     device, device_time: now.toISOString(), shifts: [], submissions: [], assignment_updates: [],
     gps_points: [], device_events: [], messages: [], flag_replies: [],
   };
-  for (const it of items) body[KEY[it.kind]].push({ ...it.payload, id: it.id });
+  for (const it of items) {
+    const k = KEY[it.kind];
+    if (k === "relays") (body.relays ??= []).push({ ...it.payload, id: it.id });
+    else body[k].push({ ...it.payload, id: it.id });
+  }
   return body;
 }
 
@@ -190,7 +202,8 @@ export class SyncEngine {
 
     // 1. Push the outbox in batches.
     for (let guard = 0; guard < 1000; guard++) {
-      const items = await this.store.pending(batchSize);
+      let relays = 0;
+      const items = (await this.store.pending(batchSize)).filter((i) => i.kind !== "relay" || ++relays <= MAX_RELAYS_PER_PUSH);
       if (!items.length) break;
       let result: PushResult;
       try {
@@ -209,7 +222,7 @@ export class SyncEngine {
       const a = result.accepted;
       const accepted = [
         ...a.shifts, ...a.submissions, ...a.assignment_updates, ...(a.gps_points ?? []), ...(a.device_events ?? []),
-        ...(a.messages ?? []), ...(a.flag_replies ?? []),
+        ...(a.messages ?? []), ...(a.flag_replies ?? []), ...(a.relays ?? []),
       ];
       const rejectedIds = new Set(result.rejected.map((r) => r.id));
       // Anything the server neither accepted nor rejected stays queued (defensive).
@@ -322,3 +335,5 @@ export class MemoryStore implements SyncStore {
     this.meta[k] = v;
   }
 }
+
+export * from "./relay";
