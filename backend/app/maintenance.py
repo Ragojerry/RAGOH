@@ -44,14 +44,37 @@ def apply_retention(
             dropped += 1
     result = db.execute(text("DELETE FROM gps_points WHERE recorded_at < :c"), {"c": cutoff})
     deleted = int(getattr(result, "rowcount", 0) or 0)
+
+    # Other personal/operational records with their own retention periods.
+    r = merged_config(None)["retention"]
+    now = datetime.combine(today or datetime.now(UTC).date(), datetime.min.time(), tzinfo=UTC)
+    other: dict[str, int] = {}
+    for key, table, column in (
+        ("device_events_days", "device_events", "occurred_at"),
+        ("notifications_days", "notifications", "created_at"),
+        ("audit_days", "audit_logs", "created_at"),
+    ):
+        days_kept = r.get(key)
+        if not days_kept:
+            continue  # null = keep forever
+        res = db.execute(
+            text(f"DELETE FROM {table} WHERE {column} < :c"),  # noqa: S608 — fixed names
+            {"c": now - timedelta(days=int(days_kept))},
+        )
+        other[table] = int(getattr(res, "rowcount", 0) or 0)
     db.commit()
     log.info(
-        "Retention: dropped %d partitions, deleted %d older points (cutoff %s)",
+        "Retention: dropped %d partitions, deleted %d older points (cutoff %s); other: %s",
         dropped,
         deleted,
         cutoff.date(),
+        other,
     )
-    return {"dropped_partitions": dropped, "deleted_points": deleted}
+    return {
+        "dropped_partitions": dropped,
+        "deleted_points": deleted,
+        **{f"deleted_{k}": v for k, v in other.items()},
+    }
 
 
 def nightly_flags(db: Session, today: date | None = None) -> dict[str, int]:

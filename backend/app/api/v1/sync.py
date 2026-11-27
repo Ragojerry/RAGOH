@@ -12,6 +12,7 @@ assignments, so this is small and avoids a whole class of "missed deletion" bugs
 
 import base64
 import binascii
+import hashlib
 import os
 import uuid
 import zlib
@@ -21,7 +22,17 @@ from typing import Any
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -140,8 +151,27 @@ def _register_device(db: Session, user: User, body: SyncPushIn, seen: bool = Tru
     return device
 
 
-@router.get("/sync/pull", response_model=SyncPullOut)
-def pull(db: DB, user: CurrentUser) -> SyncPullOut:
+@router.get(
+    "/sync/pull",
+    response_model=SyncPullOut,
+    responses={304: {"description": "Nothing changed since the ETag in If-None-Match"}},
+)
+def pull(db: DB, user: CurrentUser, request: Request) -> Response:
+    """Full snapshot. Sends an ETag; a phone that sends it back gets 304 when nothing
+    changed, which saves most of the data of the 5-minute automatic syncs."""
+    snap = _snapshot(db, user)
+    body = snap.model_dump_json()
+    tag = (
+        '"'
+        + hashlib.sha256(snap.model_dump_json(exclude={"server_time"}).encode()).hexdigest()[:32]
+        + '"'
+    )
+    if request.headers.get("if-none-match") == tag:
+        return Response(status_code=304, headers={"ETag": tag})
+    return Response(content=body, media_type="application/json", headers={"ETag": tag})
+
+
+def _snapshot(db: Session, user: User) -> SyncPullOut:
     campaign_ids = user_campaign_ids(db, user)
     campaigns = (
         list(db.scalars(select(Campaign).where(Campaign.id.in_(campaign_ids))))

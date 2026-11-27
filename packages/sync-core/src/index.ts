@@ -104,7 +104,8 @@ export class HttpError extends Error {
 
 export interface Transport {
   push(body: PushBody): Promise<PushResult>;
-  pull(): Promise<Snapshot>;
+  /** null = nothing changed since the last pull (HTTP 304): keep the local copy. */
+  pull(): Promise<Snapshot | null>;
   uploadMedia(item: MediaItem): Promise<void>;
 }
 
@@ -113,6 +114,8 @@ export interface SyncReport {
   rejected: Rejection[];
   mediaUploaded: number;
   pulled: boolean;
+  /** The server said nothing changed since the last pull. */
+  unchanged?: boolean;
   remaining: number;
   /** Set when the run stopped early (offline, server error, device blocked…). */
   error?: string;
@@ -261,10 +264,13 @@ export class SyncEngine {
     // 3. Pull a fresh snapshot.
     try {
       const snapshot = await this.transport.pull();
-      const stillPending = await this.store.pending(10_000);
-      await this.store.applySnapshot(overlayPendingStatuses(snapshot, stillPending));
-      await this.store.setMeta("last_pull_at", snapshot.server_time);
+      if (snapshot) {
+        const stillPending = await this.store.pending(10_000);
+        await this.store.applySnapshot(overlayPendingStatuses(snapshot, stillPending));
+        await this.store.setMeta("last_pull_at", snapshot.server_time);
+      }
       report.pulled = true;
+      report.unchanged = snapshot === null;
     } catch (err) {
       report.error = report.error ?? describe(err);
       report.blocked = report.blocked || (err instanceof HttpError && err.status === 423);

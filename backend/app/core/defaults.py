@@ -107,7 +107,19 @@ DEFAULT_CAMPAIGN_CONFIG: dict[str, Any] = {
     },
     "risk": {"weights": {"low": 1, "medium": 3, "high": 8}, "max": 100},
     "offline_days": 7,
-    "retention": {"raw_gps_days": 90},
+    "retention": {
+        "raw_gps_days": 90,  # then only stops and daily summaries are kept
+        "device_events_days": 180,
+        "notifications_days": 60,
+        "audit_days": 730,  # who viewed/exported tracking data: kept two years
+    },
+    # Shown to every user at first sign-in (NDPA 2023). Bump notice_version when the
+    # wording or a retention period changes, so everyone sees and accepts it again.
+    "privacy": {
+        "notice_version": "2",
+        "controller": "the programme running this campaign",
+        "contact": "your supervisor or the programme's data protection officer",
+    },
     # Live supervision (Phase 6)
     "live": {
         "heartbeat_every_s": 180,  # phone pings this often while on shift

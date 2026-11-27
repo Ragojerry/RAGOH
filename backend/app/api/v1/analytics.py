@@ -547,3 +547,116 @@ def coverage(
         else:
             sc.never_checked.append(u.full_name)
     return CoverageOut(level=level, areas=areas, supervision=list(teams.values()))
+
+
+# --- Battery and mobile data (NFR measurement) ------------------------------------
+class DeviceUsageRow(BaseModel):
+    id: uuid.UUID
+    full_name: str
+    team_name: str
+    phone_models: list[str]
+    shifts: int
+    hours: float
+    battery_per_hour: float | None = Field(description="% per hour, shifts without charging")
+    battery_8h: float | None = Field(description="projected % for an 8-hour shift")
+    mb_per_day: float | None
+    gps_points_per_hour: float | None
+
+
+class DeviceUsageOut(BaseModel):
+    date_from: date
+    date_to: date
+    collectors: list[DeviceUsageRow]
+    overall_battery_8h: float | None
+    overall_mb_per_day: float | None
+    target_battery_8h: float = 25.0
+
+
+@router.get("/analytics/device-usage", response_model=DeviceUsageOut)
+def device_usage(
+    db: DB, actor: StaffUser, date_from: date, date_to: date, team_id: uuid.UUID | None = None
+) -> DeviceUsageOut:
+    """Battery drain and mobile data per collector, from the phones' end-of-shift reports."""
+    from app.db.models import Device, DeviceEvent
+
+    start, end = _range(date_from, date_to)
+    members = team_collectors(db, actor, team_id)
+    ids = list(members)
+    events = (
+        list(
+            db.scalars(
+                select(DeviceEvent).where(
+                    DeviceEvent.user_id.in_(ids),
+                    DeviceEvent.type == "shift_summary",
+                    DeviceEvent.occurred_at >= start,
+                    DeviceEvent.occurred_at < end,
+                )
+            )
+        )
+        if ids
+        else []
+    )
+    models: dict[uuid.UUID, set[str]] = {}
+    for uid, model in db.execute(
+        select(Device.user_id, Device.model).where(Device.user_id.in_(ids))
+    ):
+        if model:
+            models.setdefault(uid, set()).add(model)
+
+    def num(d: dict[str, Any], k: str) -> float | None:
+        v = d.get(k)
+        return float(v) if isinstance(v, (int, float)) else None
+
+    rows: list[DeviceUsageRow] = []
+    all_drain: list[tuple[float, float]] = []  # (% used, hours) on battery
+    all_bytes: dict[tuple[uuid.UUID, date], float] = {}
+    for uid, (u, t) in members.items():
+        mine = [e for e in events if e.user_id == uid]
+        hours = sum((num(e.details, "minutes") or 0) / 60 for e in mine)
+        drain = [
+            ((num(e.details, "battery_start") or 0) - (num(e.details, "battery_end") or 0), (num(e.details, "minutes") or 0) / 60)
+            for e in mine
+            if not e.details.get("charged") and num(e.details, "battery_start") is not None
+            and num(e.details, "battery_end") is not None and (num(e.details, "minutes") or 0) >= 30
+        ]  # fmt: skip
+        all_drain.extend(drain)
+        per_day: dict[date, float] = {}
+        gps = 0.0
+        for e in mine:
+            b = (num(e.details, "bytes_up") or 0) + (num(e.details, "bytes_down") or 0)
+            d = e.occurred_at.date()
+            per_day[d] = per_day.get(d, 0) + b
+            all_bytes[(uid, d)] = all_bytes.get((uid, d), 0) + b
+            gps += num(e.details, "gps_points") or 0
+        rate = (
+            (sum(p for p, _ in drain) / sum(h for _, h in drain))
+            if drain and sum(h for _, h in drain)
+            else None
+        )
+        rows.append(
+            DeviceUsageRow(
+                id=uid,
+                full_name=u.full_name,
+                team_name=t.name,
+                phone_models=sorted(models.get(uid, set())),
+                shifts=len(mine),
+                hours=round(hours, 1),
+                battery_per_hour=round(rate, 1) if rate is not None else None,
+                battery_8h=round(rate * 8, 0) if rate is not None else None,
+                mb_per_day=round(sum(per_day.values()) / len(per_day) / 1e6, 2)
+                if per_day
+                else None,
+                gps_points_per_hour=round(gps / hours, 0) if hours else None,
+            )  # fmt: skip
+        )
+    tot_h = sum(h for _, h in all_drain)
+    overall_rate = sum(p for p, _ in all_drain) / tot_h if tot_h else None
+    return DeviceUsageOut(
+        date_from=date_from,
+        date_to=date_to,
+        collectors=rows,
+        overall_battery_8h=round(overall_rate * 8, 0) if overall_rate is not None else None,
+        overall_mb_per_day=round(sum(all_bytes.values()) / len(all_bytes) / 1e6, 2)
+        if all_bytes
+        else None,
+    )

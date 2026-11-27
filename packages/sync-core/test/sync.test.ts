@@ -214,3 +214,24 @@ describe("sync engine", () => {
     expect(server.pushes).toHaveLength(1);
   });
 });
+
+describe("unchanged snapshots", () => {
+  it("a 304 pull keeps the local copy and still counts as a good sync", async () => {
+    const store = new MemoryStore();
+    let calls = 0;
+    const engine = new SyncEngine(store, {
+      async push() { return { server_time: "", accepted: { shifts: [], submissions: [], assignment_updates: [] }, rejected: [] }; },
+      async pull() {
+        calls++;
+        return calls === 1 ? { server_time: "2026-11-27T10:00:00Z", assignments: [{ id: "a1", status: "pending" }] } : null;
+      },
+      async uploadMedia() {},
+    }, device);
+    await engine.run();
+    const r = await engine.run();
+    expect(r.pulled).toBe(true);
+    expect(r.unchanged).toBe(true);
+    expect(store.snapshot?.assignments).toEqual([{ id: "a1", status: "pending" }]);
+    expect(store.meta.last_sync_ok_at).toBeTruthy();
+  });
+});

@@ -1,5 +1,3 @@
-import logging
-
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -8,9 +6,11 @@ from app import __version__
 from app.api.v1 import (
     analytics,
     areas,
+    audit_logs,
     auth,
     campaigns,
     collectors,
+    devices,
     exports,
     flags,
     forms,
@@ -22,11 +22,22 @@ from app.api.v1 import (
     visit_points,
 )
 from app.core.config import get_settings
+from app.core.logging import scrub_event, setup_logging
+from app.core.middleware import GzipRequestMiddleware
 from app.db.session import engine
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-
 settings = get_settings()
+setup_logging(settings.log_json)
+if settings.sentry_dsn:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.env,
+        release=f"ragoh-api@{__version__}+{settings.git_sha}",
+        traces_sample_rate=0.0,
+        before_send=scrub_event,  # type: ignore[arg-type]  # never send bodies, headers or users (locations, answers)
+    )
 
 app = FastAPI(
     title="RAGOH API",
@@ -35,6 +46,7 @@ app = FastAPI(
     docs_url="/docs",
     openapi_url="/openapi.json",
 )
+app.add_middleware(GzipRequestMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -59,6 +71,8 @@ for module in (
     live,
     analytics,
     exports,
+    devices,
+    audit_logs,
 ):
     api.include_router(module.router)
 app.include_router(api)

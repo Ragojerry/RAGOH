@@ -27,6 +27,8 @@ services:
     restart: unless-stopped
     environment:
       RAGOH_ENV: staging
+      RAGOH_LOG_JSON: "true"
+      RAGOH_SENTRY_DSN: ${SENTRY_DSN:-}
       RAGOH_DATABASE_URL: postgresql+psycopg://ragoh:${DB_PASSWORD}@db:5432/ragoh
       RAGOH_REDIS_URL: redis://redis:6379/0
       RAGOH_JWT_SECRET: ${JWT_SECRET}

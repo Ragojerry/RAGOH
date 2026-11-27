@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { apiUrl, setApiUrl } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { Button, Card, ErrorText, H1, Input, Label, Muted, styles } from "./ui";
 
 export function LoginScreen() {
-  const { signIn } = useSession();
+  const t = useT();
+  const { signIn, erased } = useSession();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [server, setServer] = useState("");
@@ -25,7 +27,7 @@ export function LoginScreen() {
     setError(null);
     if (!server.startsWith("https://") && !server.startsWith("http://")) {
       setShowServer(true);
-      setError("Enter the server address, starting with https://");
+      setError(t("Enter the server address, starting with https://"));
       return;
     }
     setBusy(true);
@@ -44,24 +46,25 @@ export function LoginScreen() {
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={[styles.content, { paddingTop: 48 }]} keyboardShouldPersistTaps="handled">
           <H1>RAGOH</H1>
-          <Muted>Field supervision and surveys. The first sign-in needs an internet connection.</Muted>
+          <Muted>{t("Field supervision and surveys. The first sign-in needs an internet connection.")}</Muted>
+          {erased && <ErrorText>{t("This phone was erased by your supervisor. Everything that was on it has been deleted.")}</ErrorText>}
           <Card>
-            <Label>Username</Label>
+            <Label>{t("Username")}</Label>
             <Input value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} textContentType="username" />
-            <Label>Password</Label>
+            <Label>{t("Password")}</Label>
             <Input value={password} onChangeText={setPassword} secureTextEntry textContentType="password" onSubmitEditing={submit} />
             {showServer ? (
               <>
-                <Label>Server address</Label>
+                <Label>{t("Server address")}</Label>
                 <Input value={server} onChangeText={setServer} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://…" />
               </>
             ) : (
               <Text onPress={() => setShowServer(true)} style={{ color: "#0F5132", fontWeight: "600", paddingVertical: 6 }}>
-                Change server
+                {t("Change server")}
               </Text>
             )}
             <ErrorText>{error}</ErrorText>
-            <Button title="Sign in" onPress={submit} loading={busy} disabled={!username || !password} />
+            <Button title={t("Sign in")} onPress={submit} loading={busy} disabled={!username || !password} />
           </Card>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -70,6 +73,7 @@ export function LoginScreen() {
 }
 
 function PinPad({ title, subtitle, onDone, error }: { title: string; subtitle: string; onDone: (pin: string) => void; error?: string | null }) {
+  const t = useT();
   const [value, setValue] = useState("");
   return (
     <SafeAreaView style={styles.screen}>
@@ -78,54 +82,56 @@ function PinPad({ title, subtitle, onDone, error }: { title: string; subtitle: s
         <Muted>{subtitle}</Muted>
         <Input
           value={value}
-          onChangeText={(t) => setValue(t.replace(/\D/g, "").slice(0, 6))}
+          onChangeText={(v) => setValue(v.replace(/\D/g, "").slice(0, 6))}
           keyboardType="number-pad"
           secureTextEntry
           autoFocus
           style={{ fontSize: 28, letterSpacing: 12, textAlign: "center" }}
         />
         <ErrorText>{error}</ErrorText>
-        <Button title="Continue" onPress={() => { onDone(value); setValue(""); }} disabled={value.length < 4} />
+        <Button title={t("Continue")} onPress={() => { onDone(value); setValue(""); }} disabled={value.length < 4} />
       </View>
     </SafeAreaView>
   );
 }
 
 export function SetPinScreen() {
+  const t = useT();
   const { savePin } = useSession();
   const [first, setFirst] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   if (first === null) {
-    return <PinPad title="Create a PIN" subtitle="4–6 digits. You'll use it to open the app, even without internet." onDone={(p) => { setFirst(p); setError(null); }} error={error} />;
+    return <PinPad title={t("Create a PIN")} subtitle={t("4–6 digits. You'll use it to open the app, even without internet.")} onDone={(p) => { setFirst(p); setError(null); }} error={error} />;
   }
   return (
     <PinPad
-      title="Repeat your PIN"
-      subtitle="Enter the same PIN again."
+      title={t("Repeat your PIN")}
+      subtitle={t("Enter the same PIN again.")}
       onDone={(p) => {
         if (p === first) savePin(p);
-        else { setFirst(null); setError("The PINs didn't match. Try again."); }
+        else { setFirst(null); setError(t("The PINs didn't match. Try again.")); }
       }}
     />
   );
 }
 
 export function UnlockScreen() {
+  const t = useT();
   const { unlock, user, signOut } = useSession();
   const [error, setError] = useState<string | null>(null);
   return (
     <View style={{ flex: 1 }}>
       <PinPad
-        title={`Hello, ${user?.full_name.split(" ")[0] ?? ""}`}
-        subtitle="Enter your PIN to continue."
+        title={t("Hello, {name}", { name: user?.full_name.split(" ")[0] ?? "" })}
+        subtitle={t("Enter your PIN to continue.")}
         error={error}
         onDone={async (p) => {
           const r = await unlock(p);
-          if (r !== "ok") setError(r > 0 ? `Wrong PIN. ${r} attempts left.` : "Too many wrong attempts. Sign in again.");
+          if (r !== "ok") setError(r > 0 ? t("Wrong PIN. {n} attempts left.", { n: r }) : t("Too many wrong attempts. Sign in again."));
         }}
       />
       <View style={{ padding: 16 }}>
-        <Button title="Sign in as someone else" variant="secondary" onPress={signOut} />
+        <Button title={t("Sign in as someone else")} variant="secondary" onPress={signOut} />
       </View>
     </View>
   );

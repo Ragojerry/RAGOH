@@ -101,5 +101,14 @@ Push needs a free Firebase project and a free Expo account. Until this is done, 
 3. `sup1`: tap the notification → **Go to collector** (walking route) → **Spot check** → fill and finish the checklist → back on the flag, **Resolve** with a comment.
 4. Device-to-device: turn on airplane mode on **both** phones. col1 fills a survey, then **Hand data to supervisor**; sup1 **Receive data**. Turn sup1's network back on → the bundle shows **Sent**, and the survey is on the server under col1 (`GET /api/v1/collectors/{col1}/day?date=…`).
 
-## What's not in this phase
-The web dashboard (Phase 7). Barcode questions are typed by hand for now.
+## Guides for field staff
+Plain-language guides to hand out: [collectors](guides/COLLECTOR_GUIDE.md) and [supervisors](guides/SUPERVISOR_GUIDE.md).
+
+## Privacy, languages and lost phones (Phase 8)
+- The privacy notice appears at first sign-in and again when it changes; tracking can't start until it is accepted. Settings → **Read the privacy notice**.
+- Settings → **Language**: English, Hausa, Yorùbá, Igbo, Naijá (untranslated words stay in English until translators fill the catalogs in `apps/mobile/src/i18n/`).
+- A blocked phone is signed out; an erased one deletes everything on it at its next contact with the server and shows "This phone was erased by your supervisor".
+- Each shift end sends a battery/data report; crashes are reported automatically.
+
+## Not done yet
+Barcode questions are typed by hand.

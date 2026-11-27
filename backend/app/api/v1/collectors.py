@@ -1,14 +1,17 @@
 """Tracking results per collector-day: summary, stops, track, submissions, phone events."""
 
 import uuid
-from datetime import date
+from datetime import date, datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
 from geoalchemy2.shape import to_shape
+from pydantic import BaseModel
 from shapely.geometry import LineString
 from sqlalchemy import select
 
 from app.core.deps import DB, CurrentUser, ManagerOrAdmin
+from app.core.privacy import privacy_notice
 from app.db.models import (
     CollectorDaySummary,
     DeviceEvent,
@@ -196,3 +199,28 @@ def record_consent(body: ConsentIn, db: DB, user: CurrentUser) -> None:
     db.add(Consent(user_id=user.id, notice_version=body.notice_version))
     audit(db, "consent", actor_id=user.id, details={"notice_version": body.notice_version})
     db.commit()
+
+
+class PrivacyOut(BaseModel):
+    notice: dict[str, Any]
+    accepted_version: str | None
+    accepted_at: datetime | None
+    needs_acceptance: bool
+
+
+@router.get("/me/privacy", response_model=PrivacyOut)
+def my_privacy(db: DB, user: CurrentUser) -> PrivacyOut:
+    """The privacy notice for the user's campaign, and whether they accepted this version."""
+    from app.db.models import Consent
+
+    campaign = user_campaign(db, user.id)
+    notice = privacy_notice(campaign.config if campaign else None)
+    last = db.scalar(
+        select(Consent).where(Consent.user_id == user.id).order_by(Consent.accepted_at.desc())
+    )
+    return PrivacyOut(
+        notice=notice,
+        accepted_version=last.notice_version if last else None,
+        accepted_at=last.accepted_at if last else None,
+        needs_acceptance=not last or last.notice_version != notice["version"],
+    )

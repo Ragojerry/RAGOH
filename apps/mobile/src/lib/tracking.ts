@@ -84,6 +84,46 @@ async function batteryPct(): Promise<number | null> {
   }
 }
 
+// --- Battery and data per shift (NFR measurement) ------------------------------------
+async function charging(): Promise<boolean> {
+  try {
+    const st = await Battery.getBatteryStateAsync();
+    return st === Battery.BatteryState.CHARGING || st === Battery.BatteryState.FULL;
+  } catch {
+    return false;
+  }
+}
+
+async function startShiftUsage(): Promise<void> {
+  const { usageTotals } = await import("./api");
+  const u = await usageTotals();
+  await setMeta("shift_usage", JSON.stringify({
+    battery: await batteryPct(), at: Date.now(), up: u.up, down: u.down,
+    gps: Number((await getMeta("gps_count_total")) ?? 0), charged: await charging(),
+  }));
+}
+
+/** At shift end: battery used, minutes, GPS points and mobile data, sent as a device event. */
+async function emitShiftSummary(shiftId: string): Promise<void> {
+  const raw = await getMeta("shift_usage");
+  if (!raw) return;
+  const start = JSON.parse(raw) as { battery: number | null; at: number; up: number; down: number; gps: number; charged: boolean };
+  const { usageTotals } = await import("./api");
+  const u = await usageTotals();
+  await addDeviceEvent("shift_summary", {
+    battery_start: start.battery,
+    battery_end: await batteryPct(),
+    charged: start.charged || (await charging()) || (await getMeta("shift_charged")) === "1",
+    minutes: Math.round((Date.now() - start.at) / 60_000),
+    gps_points: Number((await getMeta("gps_count_total")) ?? 0) - start.gps,
+    bytes_up: Math.round(u.up - start.up),
+    bytes_down: Math.round(u.down - start.down),
+    estimated: true,
+  }, shiftId);
+  await setMeta("shift_usage", null);
+  await setMeta("shift_charged", null);
+}
+
 async function switchMode(next: Mode): Promise<void> {
   await setMeta("tracking_mode", next);
   await setMeta("tracking_anchor", null);
@@ -125,6 +165,7 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(LOCATION_TASK, 
   const cfg = await trackingConfig();
   if (Date.now() - new Date(shift.started_at).getTime() > cfg.max_shift_hours * 3600_000) {
     await endShift(shift.id, null, "auto_max");
+    await emitShiftSummary(shift.id);
     await addDeviceEvent("shift_auto_ended", { max_hours: cfg.max_shift_hours }, shift.id);
     await Location.stopLocationUpdatesAsync(LOCATION_TASK).catch(() => undefined);
     return;
@@ -160,6 +201,8 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(LOCATION_TASK, 
   await setMeta("last_fix_at", new Date(last.timestamp).toISOString());
   const countKey = `gps_count_${localDay()}`;
   await setMeta(countKey, String(Number((await getMeta(countKey)) ?? 0) + locations.length));
+  await setMeta("gps_count_total", String(Number((await getMeta("gps_count_total")) ?? 0) + locations.length));
+  if (await charging()) await setMeta("shift_charged", "1"); // excluded from battery figures
 
   if (mocked && (await getMeta("mock_reported_shift")) !== shift.id) {
     await addDeviceEvent("mock_location", { provider: "android" }, shift.id);
@@ -250,6 +293,7 @@ export async function openBatterySettings(): Promise<void> {
 export async function beginShift(loc: Parameters<typeof import("./repo").startShift>[0]) {
   const { startShift } = await import("./repo");
   const shift = await startShift(loc);
+  await startShiftUsage();
   const tracking = await startTracking(shift.id);
   return { shift, tracking };
 }
@@ -258,4 +302,5 @@ export async function beginShift(loc: Parameters<typeof import("./repo").startSh
 export async function finishShift(shiftId: string, loc: Parameters<typeof import("./repo").endShift>[1]): Promise<void> {
   await endShift(shiftId, loc);
   await stopTracking();
+  await emitShiftSummary(shiftId);
 }
