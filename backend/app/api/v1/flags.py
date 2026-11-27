@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, date, datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
@@ -31,10 +31,12 @@ from app.db.models import (
     User,
     VisitPoint,
 )
+from app.db.session import get_session_factory
 from app.services.audit import audit
 from app.services.flags import update_risk
+from app.services.push import deliver_pending, notify
 from app.services.scope import supervised_team_ids, visible_user_ids_condition
-from app.services.tracking import user_campaign
+from app.services.tracking import SessionFactory, user_campaign
 
 router = APIRouter(tags=["flags"])
 
@@ -282,7 +284,14 @@ def get_flag(flag_id: uuid.UUID, db: DB, actor: CurrentUser) -> FlagOut:
 
 
 @router.post("/flags/{flag_id}/actions", response_model=FlagOut)
-def act_on_flag(flag_id: uuid.UUID, body: ActionIn, db: DB, actor: CurrentUser) -> FlagOut:
+def act_on_flag(
+    flag_id: uuid.UUID,
+    body: ActionIn,
+    db: DB,
+    actor: CurrentUser,
+    background: BackgroundTasks,
+    factory: SessionFactory = Depends(get_session_factory),
+) -> FlagOut:
     f = _visible_flag(db, actor, flag_id)
     is_collector = actor.role == Role.collector
     if is_collector != (body.action == "reply"):
@@ -391,6 +400,11 @@ def act_on_flag(flag_id: uuid.UUID, body: ActionIn, db: DB, actor: CurrentUser) 
             data.update(
                 {"backcheck_id": str(bc.id), "assignee_id": str(assignee.id), "point": point.name}
             )
+            if assignee.id != actor.id:
+                notify(
+                    db, assignee.id, "backcheck", "New back-check", f"Back-check {point.name}",
+                    {"assignment_id": str(a.id)}, dedupe_key=f"backcheck:{bc.id}",
+                )  # fmt: skip
             bump(FlagStatus.under_review)
         case "escalate":
             f.escalated = True
@@ -426,6 +440,7 @@ def act_on_flag(flag_id: uuid.UUID, body: ActionIn, db: DB, actor: CurrentUser) 
         update_risk(db, f.collector_id, f.local_date, merged_config(c.config if c else None))
     audit(db, f"flag_{body.action}", actor_id=actor.id, entity="flag", entity_id=f.id)
     db.commit()
+    background.add_task(deliver_pending, factory)
     db.refresh(f)
     return _flag_out(db, f, _names(db, {f.collector_id}), with_actions=True)
 
@@ -522,7 +537,13 @@ def list_messages(db: DB, user: CurrentUser) -> list[MessageOut]:
 
 
 @router.post("/messages", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
-def send_message(body: MessageIn, db: DB, user: CurrentUser) -> MessageOut:
+def send_message(
+    body: MessageIn,
+    db: DB,
+    user: CurrentUser,
+    background: BackgroundTasks,
+    factory: SessionFactory = Depends(get_session_factory),
+) -> MessageOut:
     if (body.recipient_id is None) == (body.team_id is None):
         raise HTTPException(422, "Send to one person (recipient_id) or one team (team_id)")
     if body.team_id is not None:
@@ -552,6 +573,7 @@ def send_message(body: MessageIn, db: DB, user: CurrentUser) -> MessageOut:
     )
     db.add(m)
     db.commit()
+    background.add_task(deliver_pending, factory)
     return message_out(m, {user.id: user.full_name})
 
 

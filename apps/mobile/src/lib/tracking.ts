@@ -167,6 +167,9 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(LOCATION_TASK, 
   }
   await updateMode(last.coords.latitude, last.coords.longitude, last.timestamp);
 
+  // Tell the supervisor's live map where we are (throttled; cheap when offline).
+  import("./live").then((m) => m.heartbeat()).catch(() => undefined);
+
   // Keep supervisors' data fresh while the app is in the background.
   const lastSync = Number((await getMeta("bg_sync_at")) ?? 0);
   if (Date.now() - lastSync > BACKGROUND_SYNC_EVERY_S * 1000) {

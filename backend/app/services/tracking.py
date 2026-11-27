@@ -295,3 +295,6 @@ def run_processing(factory: SessionFactory, work: set[tuple[uuid.UUID, date]]) -
                 db.commit()
         except Exception:
             log.exception("Stop processing failed for %s on %s", user_id, d)
+    from app.services.push import deliver_pending
+
+    deliver_pending(factory)

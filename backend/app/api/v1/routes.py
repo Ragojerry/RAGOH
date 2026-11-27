@@ -223,3 +223,24 @@ def map_style(request: Request) -> dict[str, Any]:
             "generated_at": datetime.fromtimestamp(tiles_file.stat().st_mtime, UTC).isoformat()
         },
     }
+
+
+@router.get("/routes/between", response_model=RouteOut)
+def route_between(
+    db: DB,
+    user: CurrentUser,
+    lat: float = Query(ge=-90, le=90),
+    lon: float = Query(ge=-180, le=180),
+    to_lat: float = Query(ge=-90, le=90),
+    to_lon: float = Query(ge=-180, le=180),
+) -> RouteOut:
+    """Walking route between two positions (a supervisor going to a collector)."""
+    cfg, _ = _cfg(db, user.id)
+    r = route_to((lat, lon), (to_lat, to_lon), cfg["routing"]["walking_speed_kmh"])
+    return RouteOut(
+        source=r.source,
+        distance_m=r.distance_m,
+        duration_s=r.duration_s,
+        geometry=r.geometry,
+        steps=r.steps,
+    )

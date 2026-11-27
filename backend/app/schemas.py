@@ -282,6 +282,20 @@ class FlagReplyIn(BaseModel):
     sent_at: datetime
 
 
+class RelayIn(BaseModel):
+    """A collector's records, sealed on the collector's phone and carried by a supervisor.
+
+    ciphertext = ChaCha20-Poly1305(collector relay key, nonce, zlib(JSON SyncPushIn)),
+    with the collector's id (16 raw bytes) as associated data.
+    """
+
+    id: uuid.UUID
+    collector_id: uuid.UUID
+    nonce: str = Field(min_length=16, max_length=24)  # base64 of 12 bytes
+    ciphertext: str = Field(min_length=24, max_length=1_500_000)
+    scanned_at: datetime = Field(description="Supervisor's phone time when it was received")
+
+
 class SyncPushIn(BaseModel):
     device: DeviceIn
     device_time: datetime
@@ -292,6 +306,7 @@ class SyncPushIn(BaseModel):
     device_events: list[DeviceEventIn] = []
     messages: list[PhoneMessageIn] = []
     flag_replies: list[FlagReplyIn] = []
+    relays: list[RelayIn] = Field(default=[], max_length=20)
 
 
 class RejectedItem(BaseModel):
@@ -338,6 +353,15 @@ class SyncContactOut(BaseModel):
     phone: str | None
 
 
+class TeamMemberSyncOut(BaseModel):
+    id: uuid.UUID
+    username: str
+    full_name: str
+    phone: str | None
+    team_id: uuid.UUID
+    team_name: str
+
+
 class SyncPullOut(BaseModel):
     server_time: datetime
     user: UserOut
@@ -347,6 +371,9 @@ class SyncPullOut(BaseModel):
     messages: list[SyncMessageOut] = []
     my_flags: list[SyncFlagOut] = []
     supervisors: list[SyncContactOut] = []
+    team_members: list[TeamMemberSyncOut] = Field(
+        default=[], description="Collectors this user supervises (supervisors only)"
+    )
 
 
 class MediaOut(BaseModel):

@@ -36,6 +36,16 @@ function Gate() {
       <Stack.Screen name="day" options={{ title: "My day" }} />
       <Stack.Screen name="settings" options={{ title: "Settings" }} />
       <Stack.Screen name="messages" options={{ title: "Messages" }} />
+      <Stack.Screen name="team/index" options={{ title: "My team" }} />
+      <Stack.Screen name="team/map" options={{ title: "Live map" }} />
+      <Stack.Screen name="team/[id]" options={{ title: "Collector" }} />
+      <Stack.Screen name="team/go/[id]" options={{ title: "Go to collector" }} />
+      <Stack.Screen name="team/replay/[id]" options={{ title: "Route replay" }} />
+      <Stack.Screen name="team/flags" options={{ title: "Flags" }} />
+      <Stack.Screen name="team/flag/[id]" options={{ title: "Flag" }} />
+      <Stack.Screen name="team/reassign/[id]" options={{ title: "Move points" }} />
+      <Stack.Screen name="relay/send" options={{ title: "Hand data to supervisor" }} />
+      <Stack.Screen name="relay/scan" options={{ title: "Receive data" }} />
     </Stack>
   );
 }

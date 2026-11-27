@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, RefreshControl, ScrollView, Text, View } from "react-native";
 import { Button, Card, Chip, ErrorText, H1, Label, Muted, colors, styles } from "@/components/ui";
 import { currentLocation } from "@/lib/location";
@@ -19,8 +19,20 @@ function timeAgo(iso: string | null): string {
   return h < 24 ? `${h} h ago` : new Date(iso).toLocaleDateString();
 }
 
+let modeChecked = false; // once per app start: supervisors land on their team
+
 export default function Home() {
   const { user, sync, runSync } = useSession();
+  const isStaff = !!user && user.role !== "collector";
+  useEffect(() => {
+    if (!isStaff || modeChecked) return;
+    modeChecked = true;
+    getMeta("home_mode").then((m) => m !== "self" && router.push("/team"));
+  }, [isStaff]);
+  const toTeam = async () => {
+    await setMeta("home_mode", "team");
+    router.push("/team");
+  };
   const [shift, setShift] = useState<Shift | null>(null);
   const [counts, setCounts] = useState({ total: 0, done: 0 });
   const [otherForms, setOtherForms] = useState<FormInfo[]>([]);
@@ -108,6 +120,7 @@ export default function Home() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={sync.running} onRefresh={() => { runSync(); }} />}>
       <H1>Hello, {user?.full_name}</H1>
       <Muted>{user?.role === "supervisor" ? "Supervisor" : "Data collector"} · {new Date().toDateString()}</Muted>
+      {isStaff && <Button title="My team →" onPress={toTeam} />}
 
       <Card>
         <View style={[styles.row, { justifyContent: "space-between" }]}>
@@ -156,6 +169,9 @@ export default function Home() {
         {sync.rejected > 0 && <ErrorText>{sync.rejected} record(s) were refused by the server — see My day.</ErrorText>}
         <ErrorText>{sync.error}</ErrorText>
         <Button title="Sync now" variant="secondary" onPress={() => { runSync(); }} loading={sync.running} />
+        {!isStaff && sync.pending > 0 && (
+          <Button title="No network? Hand data to supervisor" variant="secondary" onPress={() => router.push("/relay/send")} />
+        )}
       </Card>
 
       <Button title="Settings" variant="secondary" onPress={() => router.push("/settings")} />

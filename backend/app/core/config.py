@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # Routing engines (docker services on the pilot server). Empty = straight-line fallback.
     osrm_url: str | None = None
     vroom_url: str | None = None
+    # Expo push service. Unset access token is fine for the free tier; set "" to disable push.
+    expo_push_url: str = "https://exp.host/--/api/v2/push/send"
+    expo_access_token: str | None = None
+    push_enabled: bool = True
     routing_timeout_s: float = 10.0
     # Offline map assets (tiles, fonts, style layers) produced by the routing-data workflow.
     tiles_dir: str = "/data/tiles"

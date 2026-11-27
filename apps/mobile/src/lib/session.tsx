@@ -6,6 +6,7 @@ import type { SyncReport } from "@ragoh/sync-core";
 import { login, logoutRemote } from "./api";
 import { clearUserData, getMeta } from "./db";
 import { outboxCounts, pruneOutbox } from "./repo";
+import { ensureRelayKey, heartbeat, listenForTaps, registerPush } from "./live";
 import { ensureTracking } from "./tracking";
 import { sendPendingConsent } from "./consent";
 import { cachedUser, deviceId, pin as pinStore, tokens } from "./secure";
@@ -57,7 +58,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const r = await syncNow();
       setSync((s) => ({ ...s, error: friendlySyncError(r) }));
       await pruneOutbox().catch(() => undefined);
-      if (r && !r.error) await sendPendingConsent();
+      if (r && !r.error) {
+        await sendPendingConsent();
+        const u = await cachedUser.get<User>();
+        if (u) await ensureRelayKey(u.id);
+        registerPush().catch(() => undefined);
+        heartbeat().catch(() => undefined);
+      }
       return r;
     } catch (err) {
       setSync((s) => ({ ...s, error: err instanceof Error ? err.message : String(err) }));
@@ -91,11 +98,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const appSub = AppState.addEventListener("change", (s) => {
       if (s !== "active") return;
       ensureTracking().catch(() => undefined);
+      heartbeat(true).catch(() => undefined);
       runSync();
     });
     const netSub = Network.addNetworkStateListener((st) => st.isInternetReachable && runSync());
     const unsub = onSync(() => refreshCounts());
+    const untap = listenForTaps();
     return () => {
+      untap();
       clearInterval(timer);
       appSub.remove();
       netSub.remove();

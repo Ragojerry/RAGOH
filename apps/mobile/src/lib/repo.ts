@@ -1,7 +1,7 @@
 /** Reads and writes of the app's local data, plus the SQLite implementation of SyncStore. */
 import * as Crypto from "expo-crypto";
 import type { Answers } from "@ragoh/form-engine";
-import type { MediaItem, OutboxItem, OutboxKind, Rejection, Snapshot as CoreSnapshot, SyncStore } from "@ragoh/sync-core";
+import { RELAY_KINDS, type MediaItem, type OutboxItem, type OutboxKind, type RelayEnvelope, type Rejection, type Snapshot as CoreSnapshot, type SyncStore } from "@ragoh/sync-core";
 import { getDb, setMeta } from "./db";
 import type { Assignment, AssignmentStatus, Campaign, Contact, FlagToExplain, FormInfo, InboxMessage, Location, Shift, Snapshot } from "./types";
 
@@ -206,7 +206,7 @@ export async function outboxCounts(): Promise<{ pending: number; rejected: numbe
 export async function pruneOutbox(): Promise<void> {
   const db = await getDb();
   const cutoff = new Date(Date.now() - 24 * 3600_000).toISOString();
-  await db.runAsync("DELETE FROM outbox WHERE state = 'synced' AND kind IN ('gps_point', 'device_event', 'message', 'flag_reply') AND created_at < ?", [cutoff]);
+  await db.runAsync("DELETE FROM outbox WHERE state = 'synced' AND kind IN ('gps_point', 'device_event', 'message', 'flag_reply', 'relay') AND created_at < ?", [cutoff]);
   await db.runAsync("DELETE FROM meta WHERE key LIKE 'gps_count_%' AND key < ?", [`gps_count_${cutoff.slice(0, 10)}`]);
 }
 
@@ -227,7 +227,10 @@ export async function inbox(): Promise<{ messages: InboxMessage[]; flags: FlagTo
       body: d.body ?? d.comment ?? "", sent_at: d.sent_at, pending: true };
   });
   const messages = [...((await read("inbox_messages")) as InboxMessage[]), ...outgoing].sort((a, b) => b.sent_at.localeCompare(a.sent_at));
-  return { messages, flags: (await read("inbox_flags")) as FlagToExplain[], supervisors: (await read("inbox_supervisors")) as Contact[] };
+  // A supervisor writes to their collectors (and to their own supervisors, if any).
+  const team = ((await read("team_members")) as Contact[]).map(({ id, full_name, phone }) => ({ id, full_name, phone }));
+  const contacts = [...((await read("inbox_supervisors")) as Contact[]), ...team];
+  return { messages, flags: (await read("inbox_flags")) as FlagToExplain[], supervisors: contacts };
 }
 
 export async function queueMessage(recipientId: string, body: string): Promise<void> {
@@ -319,6 +322,7 @@ export const sqliteSyncStore: SyncStore = {
       await put("inbox_messages", s.messages ?? []);
       await put("inbox_flags", s.my_flags ?? []);
       await put("inbox_supervisors", s.supervisors ?? []);
+      await put("team_members", s.team_members ?? []);
       await db.runAsync("INSERT OR REPLACE INTO meta (key, value) VALUES ('user_id', ?)", [s.user.id]);
     });
   },
@@ -326,3 +330,49 @@ export const sqliteSyncStore: SyncStore = {
     await setMeta(key, value);
   },
 };
+
+// --- Device-to-device relay ---------------------------------------------------------
+/** Collector side: unsynced work records that can be handed to a supervisor. */
+export async function relayableItems(): Promise<OutboxItem[]> {
+  const db = await getDb();
+  const kinds = RELAY_KINDS.map((k) => `'${k}'`).join(", ");
+  const rows = await db.getAllAsync<{ id: string; kind: OutboxKind; payload: string; created_at: string; attempts: number }>(
+    `SELECT id, kind, payload, created_at, attempts FROM outbox WHERE state = 'pending' AND kind IN (${kinds}) ORDER BY created_at LIMIT 1000`,
+  );
+  return rows.map((r) => ({ id: r.id, kind: r.kind, payload: JSON.parse(r.payload), createdAt: r.created_at, attempts: r.attempts }));
+}
+
+export interface ReceivedRelay {
+  id: string;
+  collector_id: string;
+  collector_name: string;
+  count: number;
+  made_at: string;
+  scanned_at: string;
+}
+
+/** Supervisor side: keep a scanned bundle; it goes to the server with the next sync. */
+export async function queueRelay(env: RelayEnvelope, collectorName: string): Promise<"queued" | "duplicate"> {
+  const db = await getDb();
+  const scannedAt = now();
+  const r = await db.runAsync(
+    "INSERT OR IGNORE INTO outbox (id, kind, payload, created_at, state) VALUES (?, 'relay', ?, ?, 'pending')",
+    [env.id, JSON.stringify({ collector_id: env.collector_id, nonce: env.nonce, ciphertext: env.ciphertext, scanned_at: scannedAt }), scannedAt],
+  );
+  if (!r.changes) return "duplicate";
+  const list = JSON.parse((await db.getFirstAsync<{ value: string }>("SELECT value FROM meta WHERE key = 'relays_received'"))?.value ?? "[]") as ReceivedRelay[];
+  list.unshift({ id: env.id, collector_id: env.collector_id, collector_name: collectorName, count: env.count, made_at: env.made_at, scanned_at: scannedAt });
+  await setMeta("relays_received", JSON.stringify(list.slice(0, 50)));
+  return "queued";
+}
+
+export async function receivedRelays(): Promise<(ReceivedRelay & { state: string; error: string | null })[]> {
+  const db = await getDb();
+  const list = JSON.parse((await db.getFirstAsync<{ value: string }>("SELECT value FROM meta WHERE key = 'relays_received'"))?.value ?? "[]") as ReceivedRelay[];
+  const out = [];
+  for (const r of list) {
+    const row = await db.getFirstAsync<{ state: string; error: string | null }>("SELECT state, error FROM outbox WHERE id = ?", [r.id]);
+    out.push({ ...r, state: row?.state ?? "synced", error: row?.error ?? null });
+  }
+  return out;
+}

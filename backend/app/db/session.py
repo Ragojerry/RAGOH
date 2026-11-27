@@ -30,3 +30,7 @@ def session_scope() -> Iterator[Session]:
 def get_session_factory():  # type: ignore[no-untyped-def]
     """Dependency for background work that must outlive the request's session."""
     return session_scope
+
+
+# Registers the session listener that queues push notifications for new messages.
+import app.services.push  # noqa: E402, F401

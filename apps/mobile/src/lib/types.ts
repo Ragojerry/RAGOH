@@ -90,6 +90,8 @@ export interface Snapshot {
   messages?: InboxMessage[];
   my_flags?: FlagToExplain[];
   supervisors?: Contact[];
+  /** supervisors only: the collectors they supervise */
+  team_members?: { id: string; username: string; full_name: string; phone: string | null; team_id: string; team_name: string }[];
 }
 
 export interface Location {
