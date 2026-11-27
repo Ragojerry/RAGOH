@@ -14,6 +14,7 @@ from app.db.models import (
     DeviceEvent,
     GpsPoint,
     Role,
+    RoutePlanned,
     Stop,
     Submission,
     User,
@@ -25,6 +26,7 @@ from app.schemas import (
     DaySubmissionOut,
     DaySummaryOut,
     DeviceEventOut,
+    PlannedRouteOut,
     StopOut,
     UserOut,
 )
@@ -141,6 +143,20 @@ def collector_day(
         )
     ]
     summary = db.get(CollectorDaySummary, (user.id, day))
+    plan = db.scalar(
+        select(RoutePlanned)
+        .where(RoutePlanned.user_id == user.id, RoutePlanned.local_date == day)
+        .order_by(RoutePlanned.created_at.desc())
+        .limit(1)
+    )
+    planned = None
+    if plan is not None:
+        line = to_shape(plan.geometry) if plan.geometry is not None else None
+        planned = PlannedRouteOut(
+            created_at=plan.created_at, source=plan.source, distance_m=plan.distance_m,
+            duration_s=plan.duration_s, stop_order=plan.stop_order,
+            geometry=[[round(x, 6), round(y, 6)] for x, y in line.coords] if line else [],
+        )  # fmt: skip
     if actor.id != user.id:
         audit(
             db,
@@ -159,6 +175,7 @@ def collector_day(
         submissions=subs,
         events=events,
         track=track,
+        planned=planned,
     )
 
 

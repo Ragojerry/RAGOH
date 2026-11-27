@@ -33,7 +33,6 @@ from app.db.models import (
     Flag,
     FlagStatus,
     Heartbeat,
-    Role,
     Severity,
     Shift,
     Team,
@@ -47,7 +46,7 @@ from app.schemas import VisitPointOut
 from app.services.audit import audit
 from app.services.geo import lonlat, point_wkt
 from app.services.push import deliver_pending, notify
-from app.services.scope import supervised_team_ids
+from app.services.scope import visible_team_ids
 from app.services.stops import haversine_m
 from app.services.tracking import DEFAULT_TZ, SessionFactory, day_bounds, user_campaign
 
@@ -158,19 +157,12 @@ class TeamLiveOut(BaseModel):
     collectors: list[LiveCollector]
 
 
-def _team_collectors(db: Session, actor: User) -> list[tuple[User, Team]]:
-    if actor.role in (Role.admin, Role.manager):
-        team_ids = list(
-            db.scalars(
-                select(Team.id)
-                .join(TeamMember, TeamMember.team_id == Team.id)
-                .join(User, User.id == TeamMember.user_id)
-                .where(User.organisation_id == actor.organisation_id)
-                .distinct()
-            )
-        )
-    else:
-        team_ids = supervised_team_ids(db, actor)
+def _team_collectors(
+    db: Session, actor: User, team_id: uuid.UUID | None = None
+) -> list[tuple[User, Team]]:
+    team_ids = visible_team_ids(db, actor)
+    if team_id is not None:
+        team_ids = [t for t in team_ids if t == team_id]
     if not team_ids:
         return []
     rows = db.execute(
@@ -212,9 +204,9 @@ def _recent_fixes(
 
 
 @router.get("/team/live", response_model=TeamLiveOut)
-def team_live(db: DB, actor: StaffUser) -> TeamLiveOut:
+def team_live(db: DB, actor: StaffUser, team_id: uuid.UUID | None = None) -> TeamLiveOut:
     now = datetime.now(UTC)
-    members = _team_collectors(db, actor)
+    members = _team_collectors(db, actor, team_id)
     c = user_campaign(db, actor.id) or (user_campaign(db, members[0][0].id) if members else None)
     cfg = merged_config(c.config if c else None)
     live = cfg["live"]
