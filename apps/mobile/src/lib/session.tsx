@@ -4,16 +4,18 @@ import * as Network from "expo-network";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SyncReport } from "@ragoh/sync-core";
 import { login, logoutRemote } from "./api";
-import { clearUserData, getMeta } from "./db";
+import { clearUserData, getMeta, setMeta } from "./db";
 import { outboxCounts, pruneOutbox } from "./repo";
 import { ensureRelayKey, heartbeat, listenForTaps, registerPush } from "./live";
 import { ensureTracking } from "./tracking";
-import { sendPendingConsent } from "./consent";
+import { hasConsented, recordConsent, refreshNotice, sendPendingConsent } from "./consent";
+import { setLanguage } from "./i18n";
+import { checkRemoteWipe } from "./wipe";
 import { cachedUser, deviceId, pin as pinStore, tokens } from "./secure";
 import { friendlySyncError, onSync, syncNow } from "./sync";
 import type { User } from "./types";
 
-export type Phase = "loading" | "signedOut" | "locked" | "setPin" | "ready";
+export type Phase = "loading" | "signedOut" | "locked" | "setPin" | "privacy" | "ready";
 
 interface SyncStatus {
   running: boolean;
@@ -32,6 +34,9 @@ interface SessionValue {
   unlock(pin: string): Promise<"ok" | number>;
   savePin(pin: string): Promise<void>;
   signOut(): Promise<void>;
+  acceptPrivacy(): Promise<void>;
+  /** Set when a supervisor erased this phone remotely (shown on the sign-in screen). */
+  erased: boolean;
   runSync(): Promise<SyncReport | null>;
   refreshCounts(): Promise<void>;
 }
@@ -43,6 +48,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [user, setUser] = useState<User | null>(null);
   const [sync, setSync] = useState<SyncStatus>({ running: false, pending: 0, rejected: 0, media: 0, lastOkAt: null, error: null });
+  const [erased, setErased] = useState(false);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
 
@@ -57,6 +63,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       const r = await syncNow();
       setSync((s) => ({ ...s, error: friendlySyncError(r) }));
+      if (r?.blocked && (await checkRemoteWipe())) {
+        setErased(true);
+        setUser(null);
+        setPhase("signedOut");
+        return r;
+      }
       await pruneOutbox().catch(() => undefined);
       if (r && !r.error) {
         await sendPendingConsent();
@@ -68,6 +80,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return r;
     } catch (err) {
       setSync((s) => ({ ...s, error: err instanceof Error ? err.message : String(err) }));
+      // A revoked sign-in may mean the phone was reported lost: ask if it must be erased.
+      if (await checkRemoteWipe()) {
+        setErased(true);
+        setUser(null);
+        setPhase("signedOut");
+      }
       return null;
     } finally {
       setSync((s) => ({ ...s, running: false }));
@@ -78,6 +96,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // Initial state from the secure store.
   useEffect(() => {
     (async () => {
+      if (await checkRemoteWipe()) setErased(true);
+      if ((await getMeta("wiped_notice")) === "1") setErased(true);
+      setLanguage((await getMeta("language")) ?? "en");
       const u = await cachedUser.get<User>();
       if (u && (await tokens.refresh()) && (await pinStore.isSet(u.id))) {
         setUser(u);
@@ -113,6 +134,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, [phase, runSync, refreshCounts]);
 
+  /** After PIN set/unlock: the privacy notice must be accepted (again, if it changed). */
+  const afterUnlock = useCallback(async () => {
+    const needs = await refreshNotice(); // null when offline
+    setPhase(needs === true || (needs === null && !(await hasConsented())) ? "privacy" : "ready");
+  }, []);
+
+  const acceptPrivacy = useCallback(async () => {
+    await recordConsent();
+    setPhase("ready");
+  }, []);
+
   const signIn = useCallback(async (username: string, password: string) => {
     const result = await login(username, password, await deviceId());
     const previous = await cachedUser.get<User>();
@@ -130,22 +162,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await tokens.save(result.access_token, result.refresh_token);
     const u = result.user as User;
     await cachedUser.set(u);
+    await setMeta("wiped_notice", null);
+    setErased(false);
+    if (!(await getMeta("language"))) setLanguage(u.language);
     setUser(u);
-    setPhase((await pinStore.isSet(u.id)) ? "ready" : "setPin");
-  }, []);
+    if (await pinStore.isSet(u.id)) await afterUnlock();
+    else setPhase("setPin");
+  }, [afterUnlock]);
 
   const unlock = useCallback(async (value: string) => {
     const r = await pinStore.check(value);
-    if (r === "ok") setPhase("ready");
+    if (r === "ok") await afterUnlock();
     else if (r === 0) setPhase("signedOut");
     return r;
-  }, []);
+  }, [afterUnlock]);
 
   const savePin = useCallback(async (value: string) => {
     if (!user) return;
     await pinStore.save(user.id, value);
-    setPhase("ready");
-  }, [user]);
+    await afterUnlock();
+  }, [user, afterUnlock]);
 
   const signOut = useCallback(async () => {
     await logoutRemote();
@@ -154,8 +190,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<SessionValue>(
-    () => ({ phase, user, sync, signIn, unlock, savePin, signOut, runSync, refreshCounts }),
-    [phase, user, sync, signIn, unlock, savePin, signOut, runSync, refreshCounts],
+    () => ({ phase, user, sync, signIn, unlock, savePin, signOut, runSync, refreshCounts, acceptPrivacy, erased }),
+    [phase, user, sync, signIn, unlock, savePin, signOut, runSync, refreshCounts, acceptPrivacy, erased],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

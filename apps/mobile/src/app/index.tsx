@@ -3,10 +3,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, RefreshControl, ScrollView, Text, View } from "react-native";
 import { Button, Card, Chip, ErrorText, H1, Label, Muted, colors, styles } from "@/components/ui";
 import { currentLocation } from "@/lib/location";
-import { NOTICE_TEXT, hasConsented, recordConsent } from "@/lib/consent";
+import { hasConsented } from "@/lib/consent";
 import { getMeta, setMeta } from "@/lib/db";
 import { activeShift, listAssignments, listForms, unreadCount } from "@/lib/repo";
 import { beginShift, finishShift, openBatterySettings, trackingStats } from "@/lib/tracking";
+import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { DONE_STATUSES, type FormInfo, type Shift } from "@/lib/types";
 
@@ -22,6 +23,7 @@ function timeAgo(iso: string | null): string {
 let modeChecked = false; // once per app start: supervisors land on their team
 
 export default function Home() {
+  const t = useT();
   const { user, sync, runSync } = useSession();
   const isStaff = !!user && user.role !== "collector";
   useEffect(() => {
@@ -65,15 +67,16 @@ export default function Home() {
   const toggleShift = async () => {
     if (!shift) {
       if (!(await hasConsented())) {
-        if (!(await ask("Location while on shift", NOTICE_TEXT, "I understand"))) return;
-        await recordConsent();
+        // Normally accepted at sign-in; this covers a notice that changed meanwhile.
+        router.push("/privacy");
+        return;
       }
       if (!(await getMeta("battery_tip_shown"))) {
         await setMeta("battery_tip_shown", "1");
         const open = await ask(
-          "Keep tracking on",
-          "Some phones stop apps in the background to save battery. Find RAGOH in the next screen and choose \"Don't optimise\" / \"Allow\". Then come back and start your shift.",
-          "Open settings",
+          t("Keep tracking on"),
+          t("Some phones stop apps in the background to save battery. Find RAGOH in the next screen and choose \"Don't optimise\" / \"Allow\". Then come back and start your shift."),
+          t("Open settings"),
         );
         if (open) {
           await openBatterySettings();
@@ -85,20 +88,20 @@ export default function Home() {
     try {
       const loc = await currentLocation();
       if (!loc) {
-        Alert.alert("Location needed", "Turn on location (GPS) and allow RAGOH to use it, then try again.");
+        Alert.alert(t("Location needed"), t("Turn on location (GPS) and allow RAGOH to use it, then try again."));
         return;
       }
       if (shift) {
         await finishShift(shift.id, loc);
       } else {
-        const { tracking: t } = await beginShift(loc);
-        if (t === "no_background_permission") {
+        const { tracking: started } = await beginShift(loc);
+        if (started === "no_background_permission") {
           Alert.alert(
-            "Allow location all the time",
-            "Your shift has started, but tracking needs location access \"Allow all the time\". Open RAGOH's app settings → Permissions → Location and choose it.",
+            t("Allow location all the time"),
+            t("Your shift has started, but tracking needs location access \"Allow all the time\". Open RAGOH's app settings → Permissions → Location and choose it."),
           );
-        } else if (t === "gps_off") {
-          Alert.alert("GPS is off", "Turn on Location in your phone's quick settings.");
+        } else if (started === "gps_off") {
+          Alert.alert(t("GPS is off"), t("Turn on Location in your phone's quick settings."));
         }
       }
       await load();
@@ -109,50 +112,50 @@ export default function Home() {
   };
 
   const confirmEnd = () =>
-    Alert.alert("End shift?", "Your work stays on the phone and will be sent when you have internet.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "End shift", style: "destructive", onPress: toggleShift },
+    Alert.alert(t("End shift?"), t("Your work stays on the phone and will be sent when you have internet."), [
+      { text: t("Cancel"), style: "cancel" },
+      { text: t("End shift"), style: "destructive", onPress: toggleShift },
     ]);
 
   const syncTone = sync.error ? "danger" : sync.pending > 0 ? "warn" : "ok";
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={sync.running} onRefresh={() => { runSync(); }} />}>
-      <H1>Hello, {user?.full_name}</H1>
-      <Muted>{user?.role === "supervisor" ? "Supervisor" : "Data collector"} · {new Date().toDateString()}</Muted>
-      {isStaff && <Button title="My team →" onPress={toTeam} />}
+      <H1>{t("Hello, {name}", { name: user?.full_name ?? "" })}</H1>
+      <Muted>{user?.role === "supervisor" ? t("Supervisor") : t("Data collector")} · {new Date().toDateString()}</Muted>
+      {isStaff && <Button title={t("My team →")} onPress={toTeam} />}
 
       <Card>
         <View style={[styles.row, { justifyContent: "space-between" }]}>
-          <Label>Shift</Label>
-          <Chip text={shift ? "On shift" : "Not started"} tone={shift ? "ok" : "neutral"} />
+          <Label>{t("Shift")}</Label>
+          <Chip text={shift ? t("On shift") : t("Not started")} tone={shift ? "ok" : "neutral"} />
         </View>
-        {shift ? <Muted>Started at {new Date(shift.started_at).toLocaleTimeString()}</Muted> : <Muted>Start your shift before your first visit.</Muted>}
+        {shift ? <Muted>{t("Started at {time}", { time: new Date(shift.started_at).toLocaleTimeString() })}</Muted> : <Muted>{t("Start your shift before your first visit.")}</Muted>}
         {shift && tracking && (
           tracking.running ? (
-            <Muted>Location tracking on · {tracking.pointsToday} points today · last {timeAgo(tracking.lastFixAt)}</Muted>
+            <Muted>{t("Location tracking on · {n} points today · last {when}", { n: tracking.pointsToday, when: timeAgo(tracking.lastFixAt) })}</Muted>
           ) : (
-            <ErrorText>Location tracking is not running. Check that GPS is on and location is allowed "all the time".</ErrorText>
+            <ErrorText>{t("Location tracking is not running. Check that GPS is on and location is allowed \"all the time\".")}</ErrorText>
           )
         )}
-        <Button title={shift ? "End shift" : "Start shift"} variant={shift ? "secondary" : "primary"} onPress={shift ? confirmEnd : toggleShift} loading={busy} />
+        <Button title={shift ? t("End shift") : t("Start shift")} variant={shift ? "secondary" : "primary"} onPress={shift ? confirmEnd : toggleShift} loading={busy} />
       </Card>
 
-      <Button title={unread ? `Messages (${unread} new)` : "Messages"} variant={unread ? "primary" : "secondary"} onPress={() => router.push("/messages")} />
+      <Button title={unread ? t("Messages ({n} new)", { n: unread }) : t("Messages")} variant={unread ? "primary" : "secondary"} onPress={() => router.push("/messages")} />
 
       <Card>
-        <Label>Today's visits</Label>
-        {tasks > 0 && <Chip text={`${tasks} back-check / revisit task${tasks > 1 ? "s" : ""} from your supervisor`} tone="warn" />}
+        <Label>{t("Today's visits")}</Label>
+        {tasks > 0 && <Chip text={t("{n} back-check / revisit task(s) from your supervisor", { n: tasks })} tone="warn" />}
         <Text style={{ fontSize: 32, fontWeight: "800", color: colors.text }}>
-          {counts.done} <Text style={{ fontSize: 18, color: colors.muted }}>of {counts.total} done</Text>
+          {counts.done} <Text style={{ fontSize: 18, color: colors.muted }}>{t("of {n} done", { n: counts.total })}</Text>
         </Text>
-        <Button title="My points" onPress={() => router.push("/points")} />
-        <Button title="My day" variant="secondary" onPress={() => router.push("/day")} />
+        <Button title={t("My points")} onPress={() => router.push("/points")} />
+        <Button title={t("My day")} variant="secondary" onPress={() => router.push("/day")} />
       </Card>
 
       {otherForms.length > 0 && (
         <Card>
-          <Label>Supervision</Label>
+          <Label>{t("Supervision")}</Label>
           {otherForms.map((f) => (
             <Button key={f.version_id} title={f.name} variant="secondary" onPress={() => router.push({ pathname: "/form/[versionId]", params: { versionId: f.version_id } })} />
           ))}
@@ -161,20 +164,20 @@ export default function Home() {
 
       <Card>
         <View style={[styles.row, { justifyContent: "space-between" }]}>
-          <Label>Sync</Label>
-          <Chip text={sync.running ? "Syncing…" : sync.pending ? `${sync.pending} waiting` : "Up to date"} tone={syncTone} />
+          <Label>{t("Sync")}</Label>
+          <Chip text={sync.running ? t("Syncing…") : sync.pending ? t("{n} waiting", { n: sync.pending }) : t("Up to date")} tone={syncTone} />
         </View>
-        <Muted>Last successful sync: {timeAgo(sync.lastOkAt)}</Muted>
-        {sync.media > 0 && <Muted>{sync.media} photo(s) waiting to upload</Muted>}
-        {sync.rejected > 0 && <ErrorText>{sync.rejected} record(s) were refused by the server — see My day.</ErrorText>}
+        <Muted>{t("Last successful sync: {when}", { when: timeAgo(sync.lastOkAt) })}</Muted>
+        {sync.media > 0 && <Muted>{t("{n} photo(s) waiting to upload", { n: sync.media })}</Muted>}
+        {sync.rejected > 0 && <ErrorText>{t("{n} record(s) were refused by the server — see My day.", { n: sync.rejected })}</ErrorText>}
         <ErrorText>{sync.error}</ErrorText>
-        <Button title="Sync now" variant="secondary" onPress={() => { runSync(); }} loading={sync.running} />
+        <Button title={t("Sync now")} variant="secondary" onPress={() => { runSync(); }} loading={sync.running} />
         {!isStaff && sync.pending > 0 && (
-          <Button title="No network? Hand data to supervisor" variant="secondary" onPress={() => router.push("/relay/send")} />
+          <Button title={t("No network? Hand data to supervisor")} variant="secondary" onPress={() => router.push("/relay/send")} />
         )}
       </Card>
 
-      <Button title="Settings" variant="secondary" onPress={() => router.push("/settings")} />
+      <Button title={t("Settings")} variant="secondary" onPress={() => router.push("/settings")} />
     </ScrollView>
   );
 }

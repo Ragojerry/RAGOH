@@ -1,11 +1,14 @@
 // Registers the background location task at startup (required for headless runs).
 import "@/lib/tracking";
-import { Stack } from "expo-router";
+import { Stack, type ErrorBoundaryProps } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ActivityIndicator, View } from "react-native";
+import { useEffect } from "react";
+import { ActivityIndicator, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { LoginScreen, SetPinScreen, UnlockScreen } from "@/components/AuthScreens";
-import { colors } from "@/components/ui";
+import { PrivacyGate } from "@/components/PrivacyNotice";
+import { Button, Muted, colors } from "@/components/ui";
+import { installCrashHandler, recordError } from "@/lib/crash";
 import { SessionProvider, useSession } from "@/lib/session";
 
 function Gate() {
@@ -20,6 +23,7 @@ function Gate() {
   if (phase === "signedOut") return <LoginScreen />;
   if (phase === "setPin") return <SetPinScreen />;
   if (phase === "locked") return <UnlockScreen />;
+  if (phase === "privacy") return <PrivacyGate />;
   return (
     <Stack
       screenOptions={{
@@ -46,7 +50,24 @@ function Gate() {
       <Stack.Screen name="team/reassign/[id]" options={{ title: "Move points" }} />
       <Stack.Screen name="relay/send" options={{ title: "Hand data to supervisor" }} />
       <Stack.Screen name="relay/scan" options={{ title: "Receive data" }} />
+      <Stack.Screen name="privacy" options={{ title: "Privacy" }} />
     </Stack>
+  );
+}
+
+installCrashHandler();
+
+/** Shown instead of a white screen if a screen crashes; the error is reported. */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  useEffect(() => {
+    void recordError(error, { boundary: true });
+  }, [error]);
+  return (
+    <View style={{ flex: 1, justifyContent: "center", padding: 24, gap: 12, backgroundColor: colors.bg }}>
+      <Text style={{ fontSize: 20, fontWeight: "800", color: colors.text }}>Something went wrong</Text>
+      <Muted>Your work is saved on the phone. The problem has been reported. Try again; if it keeps happening, tell your supervisor.</Muted>
+      <Button title="Try again" onPress={retry} />
+    </View>
   );
 }
 

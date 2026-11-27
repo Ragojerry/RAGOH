@@ -29,6 +29,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @ragoh/form-engine --filter @ragoh/sync-core --filter @ragoh/routing --filter @ragoh/mobile typecheck
       - run: pnpm --filter @ragoh/form-engine --filter @ragoh/sync-core --filter @ragoh/routing --filter @ragoh/mobile test
+      - name: Translation strings are up to date
+        run: |
+          pnpm --filter @ragoh/mobile i18n:extract
+          git diff --exit-code apps/mobile/src/i18n/strings.json || { echo "::error::Run 'pnpm --filter @ragoh/mobile i18n:extract' and commit src/i18n/strings.json"; exit 1; }
       - name: Bundle JavaScript for Android
         working-directory: apps/mobile
         env:
