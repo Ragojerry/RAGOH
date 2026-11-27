@@ -33,7 +33,9 @@ class FakeServer implements Transport {
     const result: PushResult = { server_time: "", accepted: { shifts: [], submissions: [], assignment_updates: [] }, rejected: [] };
     result.accepted.gps_points = [];
     result.accepted.device_events = [];
-    for (const [key, list] of [["shifts", body.shifts], ["submissions", body.submissions], ["assignment_updates", body.assignment_updates], ["gps_points", body.gps_points], ["device_events", body.device_events]] as const) {
+    result.accepted.messages = [];
+    result.accepted.flag_replies = [];
+    for (const [key, list] of [["shifts", body.shifts], ["submissions", body.submissions], ["assignment_updates", body.assignment_updates], ["gps_points", body.gps_points], ["device_events", body.device_events], ["messages", body.messages], ["flag_replies", body.flag_replies]] as const) {
       for (const rec of list) {
         const id = String(rec.id);
         if (this.reject.has(id)) { result.rejected.push({ kind: key, id, error: "assignment is not yours" }); continue; }
@@ -189,6 +191,17 @@ describe("sync engine", () => {
     expect(server.pushes.length).toBe(3); // default batch of 500
     expect(server.pushes.flatMap((p) => p.device_events)).toHaveLength(1);
     expect(report.remaining).toBe(0);
+  });
+
+  it("sends messages and flag replies written offline", async () => {
+    const store = new MemoryStore();
+    const server = new FakeServer();
+    store.enqueue("message", "m1", { recipient_id: "sup", body: "Battery low", sent_at: "t1" });
+    store.enqueue("flag_reply", "r1", { flag_id: "f1", comment: "Family moved", sent_at: "t2" });
+    const report = await new SyncEngine(store, server, device).run();
+    expect(report.pushed).toBe(2);
+    expect(server.pushes[0]!.messages).toHaveLength(1);
+    expect(server.pushes[0]!.flag_replies[0]).toMatchObject({ id: "r1", flag_id: "f1" });
   });
 
   it("shares one run between concurrent callers", async () => {

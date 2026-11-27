@@ -34,7 +34,9 @@ export default function PointDetail() {
         const assignment = await getAssignment(id);
         setA(assignment);
         if (!assignment) return;
-        const fs = (await listForms("survey")).filter((f) => f.campaign_id === assignment.visit_point.campaign_id);
+        // A back-check task uses the back-check form; normal visits use survey forms.
+        const kind = assignment.kind === "backcheck" ? "backcheck" : "survey";
+        const fs = (await listForms(kind)).filter((f) => f.campaign_id === assignment.visit_point.campaign_id);
         setForms(fs);
         const d: Record<string, boolean> = {};
         for (const f of fs) d[f.version_id] = !!(await findDraft(f.version_id, assignment.id));
@@ -79,8 +81,15 @@ export default function PointDetail() {
       <H1>{p.name}</H1>
       <View style={styles.row}>
         <Chip text={STATUS_LABEL[a.status]} tone={DONE_STATUSES.includes(a.status) ? "ok" : "neutral"} />
+        {a.kind === "backcheck" && <Chip text="Back-check" tone="warn" />}
         <Muted>{p.external_id} · {p.type}</Muted>
       </View>
+      {a.note && (
+        <Card style={{ borderColor: colors.warning, borderWidth: 2 }}>
+          <Label>From your supervisor</Label>
+          <Text style={{ fontSize: 16, color: colors.text }}>{a.note}</Text>
+        </Card>
+      )}
 
       <Card>
         <Label>Where</Label>

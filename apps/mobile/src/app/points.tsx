@@ -117,6 +117,8 @@ export default function Points() {
                 </Muted>
                 <Chip text={STATUS_LABEL[a.status]} tone={DONE_STATUSES.includes(a.status) ? "ok" : "neutral"} />
               </View>
+              {a.kind === "backcheck" && <Chip text="Back-check" tone="warn" />}
+              {a.note && !DONE_STATUSES.includes(a.status) && <Muted>Supervisor: {a.note}</Muted>}
             </Pressable>
           )}
         />

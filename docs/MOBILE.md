@@ -45,5 +45,16 @@ Phones need **Android 8.0 or newer**. Uninstalling the app deletes unsynced work
 - On a point, **Walking route** shows the route on the map with turn-by-turn steps (or a straight line when offline).
 - **Settings → Offline map → Download offline map**: downloads the map around your points (about 10–40 MB — use Wi-Fi). Available once the server's map has been prepared (see DEPLOYMENT.md).
 
+## Messages and supervisor follow-up (Phase 5)
+- **Messages** on the home screen shows new messages from your supervisor and any **question about your work** ("Please explain"). Type your explanation and send — it goes as soon as you have internet.
+- You can message or call your supervisor from the same screen.
+- **Back-check** tasks (verify another collector's visit) and **revisits** appear in My points with an orange label and the supervisor's note. Back-check tasks open the short back-check form.
+
+### Testing the flags end to end (staging)
+1. Push a "cheater" day for `col1` with the simulator (`tools/gps-simulator`).
+2. In `/docs` as `sup1`: `GET /api/v1/risk?date=<today>` (col1 at the top), `GET /api/v1/flags` (surveys far from houses, points done without a visit, very short interviews, long idle at home).
+3. `POST /api/v1/flags/{id}/actions` with `{"action": "request_explanation", "comment": "Did you visit?"}` → on col1's phone, sync → Messages shows the question → reply.
+4. Back as sup1: `GET /api/v1/flags/{id}` shows the reply; then `{"action": "resolve", "comment": "..."}`.
+
 ## What's not in this phase
 Supervisor team views (Phase 6). Barcode questions are typed by hand for now.

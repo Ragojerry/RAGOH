@@ -3,7 +3,7 @@ import * as Crypto from "expo-crypto";
 import type { Answers } from "@ragoh/form-engine";
 import type { MediaItem, OutboxItem, OutboxKind, Rejection, Snapshot as CoreSnapshot, SyncStore } from "@ragoh/sync-core";
 import { getDb, setMeta } from "./db";
-import type { Assignment, AssignmentStatus, Campaign, FormInfo, Location, Shift, Snapshot } from "./types";
+import type { Assignment, AssignmentStatus, Campaign, Contact, FlagToExplain, FormInfo, InboxMessage, Location, Shift, Snapshot } from "./types";
 
 const now = () => new Date().toISOString();
 export const newId = () => Crypto.randomUUID();
@@ -196,7 +196,7 @@ export async function outboxCounts(): Promise<{ pending: number; rejected: numbe
   const db = await getDb();
   // GPS points are counted separately so "3 waiting" means work the collector did, not fixes.
   const r = await db.getFirstAsync<{ pending: number; rejected: number }>(
-    "SELECT SUM(state = 'pending' AND kind NOT IN ('gps_point', 'device_event')) AS pending, SUM(state = 'rejected') AS rejected FROM outbox",
+    "SELECT SUM(state = 'pending' AND kind NOT IN ('gps_point', 'device_event', 'message', 'flag_reply')) AS pending, SUM(state = 'rejected') AS rejected FROM outbox",
   );
   const m = await db.getFirstAsync<{ n: number }>("SELECT COUNT(*) AS n FROM media WHERE uploaded = 0");
   return { pending: r?.pending ?? 0, rejected: r?.rejected ?? 0, media: m?.n ?? 0 };
@@ -206,8 +206,43 @@ export async function outboxCounts(): Promise<{ pending: number; rejected: numbe
 export async function pruneOutbox(): Promise<void> {
   const db = await getDb();
   const cutoff = new Date(Date.now() - 24 * 3600_000).toISOString();
-  await db.runAsync("DELETE FROM outbox WHERE state = 'synced' AND kind IN ('gps_point', 'device_event') AND created_at < ?", [cutoff]);
+  await db.runAsync("DELETE FROM outbox WHERE state = 'synced' AND kind IN ('gps_point', 'device_event', 'message', 'flag_reply') AND created_at < ?", [cutoff]);
   await db.runAsync("DELETE FROM meta WHERE key LIKE 'gps_count_%' AND key < ?", [`gps_count_${cutoff.slice(0, 10)}`]);
+}
+
+// --- Inbox: supervisor messages and flags to explain ---------------------------------
+export async function inbox(): Promise<{ messages: InboxMessage[]; flags: FlagToExplain[]; supervisors: Contact[] }> {
+  const db = await getDb();
+  const read = async (key: string) => {
+    const r = await db.getFirstAsync<{ value: string }>("SELECT value FROM meta WHERE key = ?", [key]);
+    return r ? JSON.parse(r.value) : [];
+  };
+  const pending = await db.getAllAsync<{ id: string; payload: string }>(
+    "SELECT id, payload FROM outbox WHERE kind IN ('message', 'flag_reply') AND state = 'pending' ORDER BY created_at",
+  );
+  const me = await db.getFirstAsync<{ value: string }>("SELECT value FROM meta WHERE key = 'user_id'");
+  const outgoing: InboxMessage[] = pending.map((p) => {
+    const d = JSON.parse(p.payload) as { body?: string; comment?: string; recipient_id?: string; flag_id?: string; sent_at: string };
+    return { id: p.id, sender_id: me?.value ?? "", sender_name: "You", recipient_id: d.recipient_id ?? null, flag_id: d.flag_id ?? null,
+      body: d.body ?? d.comment ?? "", sent_at: d.sent_at, pending: true };
+  });
+  const messages = [...((await read("inbox_messages")) as InboxMessage[]), ...outgoing].sort((a, b) => b.sent_at.localeCompare(a.sent_at));
+  return { messages, flags: (await read("inbox_flags")) as FlagToExplain[], supervisors: (await read("inbox_supervisors")) as Contact[] };
+}
+
+export async function queueMessage(recipientId: string, body: string): Promise<void> {
+  await enqueue("message", newId(), { recipient_id: recipientId, body: body.trim(), sent_at: now() });
+}
+
+export async function queueFlagReply(flagId: string, comment: string): Promise<void> {
+  await enqueue("flag_reply", newId(), { flag_id: flagId, comment: comment.trim(), sent_at: now() });
+}
+
+export async function unreadCount(): Promise<number> {
+  const { messages, flags } = await inbox();
+  const seen = (await (await getDb()).getFirstAsync<{ value: string }>("SELECT value FROM meta WHERE key = 'inbox_seen_at'"))?.value ?? "";
+  const me = (await (await getDb()).getFirstAsync<{ value: string }>("SELECT value FROM meta WHERE key = 'user_id'"))?.value;
+  return messages.filter((m) => !m.pending && m.sender_id !== me && m.sent_at > seen).length + flags.length;
 }
 
 // --- SyncStore over SQLite ------------------------------------------------------------
@@ -279,6 +314,12 @@ export const sqliteSyncStore: SyncStore = {
       for (const a of s.assignments) {
         await db.runAsync("INSERT INTO assignments (id, status, sort, json) VALUES (?, ?, ?, ?)", [a.id, a.status, i++, JSON.stringify(a)]);
       }
+      const put = (key: string, value: unknown) =>
+        db.runAsync("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", [key, JSON.stringify(value)]);
+      await put("inbox_messages", s.messages ?? []);
+      await put("inbox_flags", s.my_flags ?? []);
+      await put("inbox_supervisors", s.supervisors ?? []);
+      await db.runAsync("INSERT OR REPLACE INTO meta (key, value) VALUES ('user_id', ?)", [s.user.id]);
     });
   },
   async setMeta(key, value) {

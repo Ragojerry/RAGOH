@@ -32,6 +32,36 @@ export interface Assignment {
   planned_date: string | null;
   status: AssignmentStatus;
   visit_point: VisitPoint;
+  /** "backcheck" = re-interview to verify someone else's visit */
+  kind?: "visit" | "backcheck";
+  /** e.g. "Revisit requested: …" from the supervisor */
+  note?: string | null;
+}
+
+export interface InboxMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  recipient_id: string | null;
+  flag_id: string | null;
+  body: string;
+  sent_at: string;
+  /** true for messages written on this phone and not yet sent */
+  pending?: boolean;
+}
+
+export interface FlagToExplain {
+  id: string;
+  title: string;
+  local_date: string;
+  status: string;
+  details: Record<string, unknown>;
+}
+
+export interface Contact {
+  id: string;
+  full_name: string;
+  phone: string | null;
 }
 
 export interface FormInfo {
@@ -57,6 +87,9 @@ export interface Snapshot {
   campaigns: Campaign[];
   forms: FormInfo[];
   assignments: Assignment[];
+  messages?: InboxMessage[];
+  my_flags?: FlagToExplain[];
+  supervisors?: Contact[];
 }
 
 export interface Location {

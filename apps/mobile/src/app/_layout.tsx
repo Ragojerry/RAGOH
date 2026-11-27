@@ -35,6 +35,7 @@ function Gate() {
       <Stack.Screen name="form/[versionId]" options={{ title: "Survey" }} />
       <Stack.Screen name="day" options={{ title: "My day" }} />
       <Stack.Screen name="settings" options={{ title: "Settings" }} />
+      <Stack.Screen name="messages" options={{ title: "Messages" }} />
     </Stack>
   );
 }

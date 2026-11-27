@@ -6,8 +6,8 @@
 | 1 — Foundation + AWS staging deploy | In review (PR #2) |
 | 2 — Mobile core (offline) | In review (PR #3) |
 | 3 — Tracking + stops | In review (PR #4) |
-| 4 — Routing | **In review** (PR) |
-| 5 — Flags + follow-up | Not started |
+| 4 — Routing | In review (PR #5) |
+| 5 — Flags + follow-up | **In review** (PR) |
 | 6 — Supervisor mobile mode | Not started |
 | 7 — Supervisor web dashboard | Not started |
 | 7b — Integrations (DHIS2, Elasticsearch, DIGIT HCM) | Not started |
@@ -42,6 +42,14 @@
 - Phone: "Plan my route" (numbered visit order, walk distance/time per leg, route line on the map, "out of date — re-plan" when visits change), offline plan with the same algorithm (`packages/routing`), walking route + steps on each point, offline map download for the team's area (Settings).
 - Tests: backend 73 (13 new, OSRM/VROOM mocked), routing package 4. ADR 005.
 
+## Phase 5 — what's built
+- Rules engine (R1–R15 + S1–S2) with all thresholds in campaign config; runs after each sync and nightly; idempotent re-evaluation keeps flags a person acted on.
+- Explainable daily risk score per collector (severity weights, per-rule breakdown).
+- API: flags inbox with filters (`GET /flags`), flag detail with timeline, follow-up actions (`POST /flags/{id}/actions`), risk list (`GET /risk`), messages (`/messages`), back-checks (`GET /backchecks`) with automatic answer comparison.
+- Phone: Messages screen (questions about flagged work with offline reply, two-way messages, call supervisor), back-check and revisit tasks marked in the points list with the supervisor's note, back-check form used for back-check tasks.
+- Fixed: pushing phone events (GPS off, tracking restarted) failed on the server since Phase 3 — now tested.
+- Tests: backend 89 (16 new for flags), sync engine 12. ADR 006.
+
 ## Decisions
 - AWS region eu-north-1 (Stockholm) — the account is on the AWS free plan, which only allows this region.
 - AWS bootstrap done: OIDC role `ragoh-github-deploy`, state bucket `ragoh-tfstate-568898409880-eu-north-1`, budget `ragoh-monthly` (USD 100). GitHub variables and `production` environment set.
@@ -56,4 +64,5 @@
 - Photos inside repeat groups are not uploaded yet (server accepts top-level photo fields only).
 - APK is signed with the default debug key — fine for the pilot; a proper release key is needed before wider distribution (Phase 8).
 - Barcode questions are typed by hand (camera scanning later).
+- No push notifications yet (Phase 6): collectors see supervisor questions after their next sync.
 - Background tracking has not been field-tested yet: test on the pilot team's actual phones (battery savers on Tecno/Infinix/itel are the main risk). Tracking does not restart by itself after a phone reboot until the app is opened.

@@ -9,7 +9,7 @@
  * A network failure stops the run and leaves everything queued for next time.
  */
 
-export type OutboxKind = "shift" | "submission" | "assignment_update" | "gps_point" | "device_event";
+export type OutboxKind = "shift" | "submission" | "assignment_update" | "gps_point" | "device_event" | "message" | "flag_reply";
 
 export interface OutboxItem {
   /** Client UUID of the record (shift id, submission id, status-change id). */
@@ -42,6 +42,8 @@ export interface PushBody {
   assignment_updates: Record<string, unknown>[];
   gps_points: Record<string, unknown>[];
   device_events: Record<string, unknown>[];
+  messages: Record<string, unknown>[];
+  flag_replies: Record<string, unknown>[];
 }
 
 export interface PushResult {
@@ -52,6 +54,8 @@ export interface PushResult {
     assignment_updates: string[];
     gps_points?: string[];
     device_events?: string[];
+    messages?: string[];
+    flag_replies?: string[];
   };
   rejected: Rejection[];
 }
@@ -116,17 +120,21 @@ export interface SyncOptions {
   now?: () => Date;
 }
 
-const KEY: Record<OutboxKind, "shifts" | "submissions" | "assignment_updates" | "gps_points" | "device_events"> = {
+type PushKey = "shifts" | "submissions" | "assignment_updates" | "gps_points" | "device_events" | "messages" | "flag_replies";
+const KEY: Record<OutboxKind, PushKey> = {
   shift: "shifts",
   submission: "submissions",
   assignment_update: "assignment_updates",
   gps_point: "gps_points",
   device_event: "device_events",
+  message: "messages",
+  flag_reply: "flag_replies",
 };
 
 export function buildPushBody(device: PushBody["device"], items: OutboxItem[], now: Date): PushBody {
   const body: PushBody = {
-    device, device_time: now.toISOString(), shifts: [], submissions: [], assignment_updates: [], gps_points: [], device_events: [],
+    device, device_time: now.toISOString(), shifts: [], submissions: [], assignment_updates: [],
+    gps_points: [], device_events: [], messages: [], flag_replies: [],
   };
   for (const it of items) body[KEY[it.kind]].push({ ...it.payload, id: it.id });
   return body;
@@ -201,6 +209,7 @@ export class SyncEngine {
       const a = result.accepted;
       const accepted = [
         ...a.shifts, ...a.submissions, ...a.assignment_updates, ...(a.gps_points ?? []), ...(a.device_events ?? []),
+        ...(a.messages ?? []), ...(a.flag_replies ?? []),
       ];
       const rejectedIds = new Set(result.rejected.map((r) => r.id));
       // Anything the server neither accepted nor rejected stays queued (defensive).

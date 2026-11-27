@@ -5,7 +5,7 @@ import { Button, Card, Chip, ErrorText, H1, Label, Muted, colors, styles } from 
 import { currentLocation } from "@/lib/location";
 import { NOTICE_TEXT, hasConsented, recordConsent } from "@/lib/consent";
 import { getMeta, setMeta } from "@/lib/db";
-import { activeShift, listAssignments, listForms } from "@/lib/repo";
+import { activeShift, listAssignments, listForms, unreadCount } from "@/lib/repo";
 import { beginShift, finishShift, openBatterySettings, trackingStats } from "@/lib/tracking";
 import { useSession } from "@/lib/session";
 import { DONE_STATUSES, type FormInfo, type Shift } from "@/lib/types";
@@ -24,6 +24,8 @@ export default function Home() {
   const [shift, setShift] = useState<Shift | null>(null);
   const [counts, setCounts] = useState({ total: 0, done: 0 });
   const [otherForms, setOtherForms] = useState<FormInfo[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [tasks, setTasks] = useState(0);
   const [busy, setBusy] = useState(false);
   const [tracking, setTracking] = useState<{ running: boolean; lastFixAt: string | null; pointsToday: number } | null>(null);
 
@@ -32,6 +34,8 @@ export default function Home() {
     setTracking(await trackingStats());
     const a = await listAssignments();
     setCounts({ total: a.length, done: a.filter((x) => DONE_STATUSES.includes(x.status)).length });
+    setTasks(a.filter((x) => !DONE_STATUSES.includes(x.status) && (x.kind === "backcheck" || !!x.note)).length);
+    setUnread(await unreadCount());
     // Supervisors fill checklists that aren't tied to a visit point.
     setOtherForms(user?.role === "collector" ? [] : await listForms("supervision"));
   }, [user]);
@@ -121,8 +125,11 @@ export default function Home() {
         <Button title={shift ? "End shift" : "Start shift"} variant={shift ? "secondary" : "primary"} onPress={shift ? confirmEnd : toggleShift} loading={busy} />
       </Card>
 
+      <Button title={unread ? `Messages (${unread} new)` : "Messages"} variant={unread ? "primary" : "secondary"} onPress={() => router.push("/messages")} />
+
       <Card>
         <Label>Today's visits</Label>
+        {tasks > 0 && <Chip text={`${tasks} back-check / revisit task${tasks > 1 ? "s" : ""} from your supervisor`} tone="warn" />}
         <Text style={{ fontSize: 32, fontWeight: "800", color: colors.text }}>
           {counts.done} <Text style={{ fontSize: 18, color: colors.muted }}>of {counts.total} done</Text>
         </Text>
