@@ -7,7 +7,7 @@ You need: the GitHub repo `Ragojerry/RAGOH`, an AWS account, and a Claude plan w
 2. Under **Repository access**, add **RAGOH** → **Save**.
 
 ## 2. Connect AWS to GitHub (no AWS keys stored anywhere)
-1. Sign in to the AWS Console. Pick the region you want (e.g. `eu-west-1` Ireland or `af-south-1` Cape Town — Cape Town is closer to Nigeria but must be enabled first and costs slightly more).
+1. Sign in to the AWS Console. Pick your region. (RAGOH uses `eu-north-1` Stockholm because AWS free-plan accounts only allow one region.)
 2. Open **CloudFormation → Create stack → With new resources**.
 3. Choose **Upload a template file** and upload `infra/bootstrap/github-oidc-role.yaml` from this repo (download it from GitHub first).
 4. Stack name: `ragoh-bootstrap`. Leave the parameters as they are. If the stack fails because the GitHub identity provider already exists, delete the failed stack and retry with `CreateOIDCProvider = false`.

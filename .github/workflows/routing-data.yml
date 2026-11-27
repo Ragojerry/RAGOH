@@ -1,0 +1,114 @@
+name: Routing data
+
+# Builds the FCT walking-route network (OSRM) and offline map (vector tiles + fonts +
+# style) from OpenStreetMap, and uploads them to the routing bucket. The next Deploy run
+# copies them to the server. Run it manually once after the first deploy, then monthly.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 2 * *" # 03:17 UTC on the 2nd of each month
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  # FCT bounding box (west, south, east, north) with a small margin.
+  BBOX: "6.70,8.35,7.65,9.50"
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
+jobs:
+  osrm:
+    name: Walking routes (OSRM, foot)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Download Nigeria OpenStreetMap extract
+        run: |
+          curl -fsSL --retry 3 -o nigeria.osm.pbf https://download.geofabrik.de/africa/nigeria-latest.osm.pbf
+          ls -lh nigeria.osm.pbf
+      - name: Clip to the FCT
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+          mkdir -p data
+          osmium extract --bbox "$BBOX" --strategy complete_ways nigeria.osm.pbf -o data/fct.osm.pbf
+          ls -lh data/fct.osm.pbf
+      - name: Build OSRM foot network (MLD)
+        run: |
+          IMG=osrm/osrm-backend:v5.27.1
+          docker run --rm -v "$PWD/data:/data" $IMG osrm-extract -p /opt/foot.lua /data/fct.osm.pbf
+          docker run --rm -v "$PWD/data:/data" $IMG osrm-partition /data/fct.osrm
+          docker run --rm -v "$PWD/data:/data" $IMG osrm-customize /data/fct.osrm
+          rm data/fct.osm.pbf
+          du -sh data
+      - name: Smoke-test a route inside Abuja
+        run: |
+          docker run -d --name osrm -p 5000:5000 -v "$PWD/data:/data" osrm/osrm-backend:v5.27.1 osrm-routed --algorithm mld /data/fct.osrm
+          sleep 5
+          curl -fsS "http://localhost:5000/route/v1/foot/7.4891,9.0331;7.4797,9.0612?overview=false" | tee route.json
+          grep -q '"code":"Ok"' route.json
+          docker rm -f osrm
+      - name: Upload
+        run: |
+          BUCKET="ragoh-staging-routing-$(aws sts get-caller-identity --query Account --output text)"
+          aws s3 sync data/ "s3://$BUCKET/osrm/" --delete
+          echo "### Routing data uploaded to s3://$BUCKET/osrm/" >> "$GITHUB_STEP_SUMMARY"
+
+  tiles:
+    name: Offline map (vector tiles)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the pmtiles tool
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          URL=$(gh api repos/protomaps/go-pmtiles/releases/latest --jq '.assets[] | select(.name | test("Linux_x86_64.tar.gz$")) | .browser_download_url')
+          curl -fsSL "$URL" | tar xz pmtiles
+          ./pmtiles version
+      - name: Extract the FCT from the latest Protomaps world build
+        run: |
+          for i in $(seq 0 14); do
+            D=$(date -u -d "-$i day" +%Y%m%d)
+            if curl -fsSI "https://build.protomaps.com/$D.pmtiles" > /dev/null; then BUILD=$D; break; fi
+          done
+          [ -n "${BUILD:-}" ] || { echo "::error::No Protomaps build found in the last 2 weeks"; exit 1; }
+          echo "Using build $BUILD"
+          mkdir -p out/assets
+          ./pmtiles extract "https://build.protomaps.com/$BUILD.pmtiles" out/fct.pmtiles --bbox="$BBOX" --maxzoom=15
+          ./pmtiles show out/fct.pmtiles | head -20
+          ls -lh out/fct.pmtiles
+      - name: Map style layers
+        run: |
+          npm install --no-save @protomaps/basemaps@5
+          node -e '
+            const b = require("@protomaps/basemaps");
+            const layers = b.namedFlavor ? b.layers("protomaps", b.namedFlavor("light"), { lang: "en" }) : b.layers("protomaps", "light");
+            require("fs").writeFileSync("out/style-layers.json", JSON.stringify(layers));
+            console.log(layers.length, "layers");
+          '
+      - name: Fonts and icons
+        run: |
+          git clone --depth 1 https://github.com/protomaps/basemaps-assets.git
+          mkdir -p out/assets/fonts out/assets/sprites/v4
+          cp -r "basemaps-assets/fonts/Noto Sans Regular" "basemaps-assets/fonts/Noto Sans Medium" "basemaps-assets/fonts/Noto Sans Italic" out/assets/fonts/
+          cp basemaps-assets/sprites/v4/light* out/assets/sprites/v4/
+          du -sh out/*
+      - name: Upload
+        run: |
+          BUCKET="ragoh-staging-routing-$(aws sts get-caller-identity --query Account --output text)"
+          aws s3 sync out/ "s3://$BUCKET/tiles/" --delete
+          echo "### Offline map uploaded to s3://$BUCKET/tiles/" >> "$GITHUB_STEP_SUMMARY"
+          echo "Re-run **Deploy** (Actions → Deploy → Run workflow) to copy it to the server." >> "$GITHUB_STEP_SUMMARY"

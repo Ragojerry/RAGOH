@@ -1,0 +1,110 @@
+{
+ "schema_version": 1,
+ "id_string": "ragoh_supervision_checklist",
+ "version": "2026112601",
+ "title": "Supervision checklist",
+ "fields": [
+  {
+   "type": "text",
+   "name": "collector_username",
+   "label": "Collector's username",
+   "required": "yes"
+  },
+  {
+   "type": "select_one",
+   "name": "on_time",
+   "label": "Did the collector start on time?",
+   "required": "yes",
+   "choices": [
+    {
+     "name": "yes",
+     "label": "Yes"
+    },
+    {
+     "name": "no",
+     "label": "No"
+    }
+   ]
+  },
+  {
+   "type": "select_one",
+   "name": "id_badge",
+   "label": "Is the collector wearing an ID badge?",
+   "required": "yes",
+   "choices": [
+    {
+     "name": "yes",
+     "label": "Yes"
+    },
+    {
+     "name": "no",
+     "label": "No"
+    }
+   ]
+  },
+  {
+   "type": "select_one",
+   "name": "consent_ok",
+   "label": "Did the collector obtain consent properly?",
+   "required": "yes",
+   "choices": [
+    {
+     "name": "yes",
+     "label": "Yes"
+    },
+    {
+     "name": "no",
+     "label": "No"
+    }
+   ]
+  },
+  {
+   "type": "select_one",
+   "name": "interview_quality",
+   "label": "Quality of the interview observed",
+   "required": "yes",
+   "choices": [
+    {
+     "name": "good",
+     "label": "Good"
+    },
+    {
+     "name": "fair",
+     "label": "Fair"
+    },
+    {
+     "name": "poor",
+     "label": "Poor"
+    }
+   ]
+  },
+  {
+   "type": "select_one",
+   "name": "gps_on",
+   "label": "Is the phone's GPS/location switched on?",
+   "required": "yes",
+   "choices": [
+    {
+     "name": "yes",
+     "label": "Yes"
+    },
+    {
+     "name": "no",
+     "label": "No"
+    }
+   ]
+  },
+  {
+   "type": "integer",
+   "name": "battery",
+   "label": "Phone battery level (%)",
+   "constraint": ". >= 0 and . <= 100"
+  },
+  {
+   "type": "text",
+   "name": "issues",
+   "label": "Issues found and actions taken",
+   "appearance": "multiline"
+  }
+ ]
+}
