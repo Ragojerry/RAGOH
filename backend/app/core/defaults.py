@@ -1,0 +1,132 @@
+"""Default campaign configuration. Every tunable lives here, never inline in code.
+
+Campaign.config (jsonb) overrides any of these keys.
+"""
+
+from typing import Any
+
+DEFAULT_CAMPAIGN_CONFIG: dict[str, Any] = {
+    "geofence_m": {
+        "household": 50,
+        "settlement": 150,
+        "facility": 100,
+        "school": 100,
+        "other": 75,
+    },
+    "tracking": {
+        "moving_interval_s": 10,
+        "stationary_interval_s": 90,
+        "max_accuracy_m": 50,
+        "heartbeat_interval_s": 180,
+        "max_shift_hours": 12,
+    },
+    "stops": {
+        "radius_m": 50,
+        "min_duration_s": 180,
+        "merge_gap_s": 120,
+        # A run of points is "near" a visit point within this multiple of its geofence.
+        "near_factor": 2.0,
+        # Places with long stops on several days (e.g. home) are classified as "base".
+        "base_min_dwell_s": 1800,
+        "base_min_days": 2,
+        "base_radius_m": 100,
+    },
+    "gps": {
+        # Points worse than this are kept but ignored for stops and distance.
+        "max_accuracy_m": 50,
+        # No points for this long during a shift = tracking gap.
+        "gap_s": 600,
+        # Faster than this between two points = impossible movement (ignored for distance).
+        "max_speed_mps": 40,
+    },
+    "routing": {
+        "mode": "foot",
+        "walking_speed_kmh": 4.0,
+        # Time planned at each visit when ordering the day.
+        "service_s": 600,
+        "return_to_start": False,
+    },
+    # Abnormal-behaviour rules. Every rule can be switched off or re-tuned per campaign.
+    "flags": {
+        "R1": {"enabled": True, "severity": "high", "tolerance_m": 20},  # survey outside geofence
+        "R2": {"enabled": True, "severity": "medium", "min_duration_s": 180},  # too-short interview
+        "R3": {"enabled": True, "severity": "low", "max_duration_s": 3600},  # too-long interview
+        "R4": {
+            "enabled": True,
+            "severity": "high",
+            "max_count": 4,
+            "window_min": 15,
+        },  # too many too fast
+        "R5": {
+            "enabled": True,
+            "severity": "medium",
+            "min_dwell_s": 300,
+        },  # short stop at completed point
+        "R6": {"enabled": True, "severity": "high"},  # completed without visiting
+        "R7": {"enabled": True, "severity": "medium", "min_jumps": 1},  # impossible movement
+        "R8": {"enabled": True, "severity": "high"},  # mock location
+        "R9": {"enabled": True, "severity": "medium", "max_idle_s": 3600},  # long idle elsewhere
+        "R10": {"enabled": True, "severity": "medium", "min_gap_s": 1200},  # tracking gaps
+        "R11": {
+            "enabled": True,
+            "severity": "low",
+            "max_outside_share": 0.2,
+        },  # outside assigned area
+        "R12": {
+            "enabled": True,
+            "severity": "low",
+            "start": "07:00",
+            "end": "18:00",
+        },  # outside hours
+        "R13": {"enabled": True, "severity": "medium", "max_offset_s": 300},  # phone clock wrong
+        "R14": {
+            "enabled": True,
+            "severity": "medium",
+            "min_submissions": 3,
+            "same_answers_share": 0.8,
+            "refusal_share": 0.5,
+            "min_for_refusal": 4,
+        },  # data-quality patterns
+        "R15": {
+            "enabled": True,
+            "severity": "low",
+            "share_of_median": 0.5,
+            "min_team": 3,
+            "min_median": 4,
+        },
+        "S1": {
+            "enabled": True,
+            "severity": "medium",
+            "days": 7,
+        },  # collector not supervised recently
+        "S2": {
+            "enabled": True,
+            "severity": "medium",
+            "hours": 24,
+        },  # high flag left without follow-up
+    },
+    "risk": {"weights": {"low": 1, "medium": 3, "high": 8}, "max": 100},
+    "offline_days": 7,
+    "retention": {"raw_gps_days": 90},
+}
+
+
+def merged_config(overrides: dict[str, Any] | None) -> dict[str, Any]:
+    """Deep-merge campaign overrides onto the defaults."""
+
+    def merge(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+        out = dict(base)
+        for key, value in extra.items():
+            if isinstance(value, dict) and isinstance(out.get(key), dict):
+                out[key] = merge(out[key], value)
+            else:
+                out[key] = value
+        return out
+
+    return merge(DEFAULT_CAMPAIGN_CONFIG, overrides or {})
+
+
+def geofence_for(point_type: str, config: dict[str, Any] | None = None) -> int:
+    cfg = merged_config(config)
+    fences: dict[str, int] = cfg["geofence_m"]
+    return int(fences.get(point_type, fences["other"]))

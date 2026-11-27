@@ -1,0 +1,150 @@
+{
+ "schema_version": 1,
+ "id_string": "ragoh_household_survey",
+ "version": "2026112601",
+ "title": "Household survey",
+ "fields": [
+  {
+   "type": "note",
+   "name": "intro",
+   "label": "Introduce yourself and explain the purpose of the visit."
+  },
+  {
+   "type": "select_one",
+   "name": "consent",
+   "label": "Does the household agree to take part?",
+   "required": "yes",
+   "choices": [
+    {
+     "name": "yes",
+     "label": "Yes"
+    },
+    {
+     "name": "no",
+     "label": "No"
+    }
+   ]
+  },
+  {
+   "type": "text",
+   "name": "respondent_name",
+   "label": "Respondent's name",
+   "relevant": "${consent} = 'yes'",
+   "required": "yes"
+  },
+  {
+   "type": "select_one",
+   "name": "respondent_sex",
+   "label": "Respondent's sex",
+   "relevant": "${consent} = 'yes'",
+   "required": "yes",
+   "choices": [
+    {
+     "name": "female",
+     "label": "Female"
+    },
+    {
+     "name": "male",
+     "label": "Male"
+    }
+   ]
+  },
+  {
+   "type": "integer",
+   "name": "hh_size",
+   "label": "How many people live in this household?",
+   "relevant": "${consent} = 'yes'",
+   "constraint": ". >= 1 and . <= 40",
+   "required": "yes",
+   "constraint_message": "Enter a number between 1 and 40"
+  },
+  {
+   "type": "integer",
+   "name": "under5",
+   "label": "How many are children under 5?",
+   "relevant": "${consent} = 'yes'",
+   "constraint": ". >= 0 and . <= ${hh_size}",
+   "required": "yes",
+   "constraint_message": "Cannot be more than the household size"
+  },
+  {
+   "type": "select_one",
+   "name": "has_net",
+   "label": "Does the household own a mosquito net?",
+   "relevant": "${consent} = 'yes'",
+   "required": "yes",
+   "choices": [
+    {
+     "name": "yes",
+     "label": "Yes"
+    },
+    {
+     "name": "no",
+     "label": "No"
+    }
+   ]
+  },
+  {
+   "type": "integer",
+   "name": "nets",
+   "label": "How many nets?",
+   "relevant": "${has_net} = 'yes'",
+   "constraint": ". >= 1 and . <= 20",
+   "required": "yes"
+  },
+  {
+   "type": "select_multiple",
+   "name": "illness",
+   "label": "Illness in the last 2 weeks (select all)",
+   "relevant": "${consent} = 'yes'",
+   "choices": [
+    {
+     "name": "fever",
+     "label": "Fever"
+    },
+    {
+     "name": "cough",
+     "label": "Cough"
+    },
+    {
+     "name": "diarrhoea",
+     "label": "Diarrhoea"
+    },
+    {
+     "name": "none",
+     "label": "None"
+    }
+   ]
+  },
+  {
+   "type": "calculate",
+   "name": "pct_under5",
+   "calculation": "if(${hh_size} > 0, round(${under5} div ${hh_size} * 100, 1), 0)"
+  },
+  {
+   "type": "note",
+   "name": "summary",
+   "label": "Children under 5: ${under5} of ${hh_size} (${pct_under5}%)",
+   "relevant": "${consent} = 'yes'"
+  },
+  {
+   "type": "text",
+   "name": "refusal_reason",
+   "label": "Reason for refusal",
+   "relevant": "${consent} = 'no'"
+  },
+  {
+   "type": "image",
+   "name": "photo",
+   "label": "Photo of the house (optional)",
+   "hint": "Do not photograph people",
+   "relevant": "${consent} = 'yes'"
+  },
+  {
+   "type": "text",
+   "name": "comments",
+   "label": "Comments",
+   "appearance": "multiline"
+  }
+ ]
+}

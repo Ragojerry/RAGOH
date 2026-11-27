@@ -1,0 +1,87 @@
+name: Mobile
+
+# Type-checks and tests the TypeScript packages and app, then builds an installable
+# Android APK on GitHub's runners (no Expo account or local Android Studio needed).
+# Download the APK from the run's "Artifacts" section.
+
+on:
+  pull_request:
+    paths: ["apps/**", "packages/**", "pnpm-lock.yaml", ".github/workflows/mobile.yml"]
+  push:
+    branches: [main]
+    paths: ["apps/**", "packages/**", "pnpm-lock.yaml", ".github/workflows/mobile.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: TypeScript (types & tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @ragoh/form-engine --filter @ragoh/sync-core --filter @ragoh/routing --filter @ragoh/mobile typecheck
+      - run: pnpm --filter @ragoh/form-engine --filter @ragoh/sync-core --filter @ragoh/routing --filter @ragoh/mobile test
+      - name: Bundle JavaScript for Android
+        working-directory: apps/mobile
+        env:
+          EXPO_OFFLINE: "1"
+          CI: "1"
+        run: npx expo export --platform android --output-dir /tmp/export
+
+  apk:
+    name: Build Android APK
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Generate native Android project
+        working-directory: apps/mobile
+        env:
+          EXPO_OFFLINE: "1"
+          CI: "1"
+        run: npx expo prebuild --platform android --no-install
+      - name: Build release APK
+        working-directory: apps/mobile/android
+        env:
+          # Optional: bake in the server address so users don't have to type it.
+          EXPO_PUBLIC_API_URL: ${{ vars.RAGOH_API_URL }}
+          NODE_ENV: production
+        run: |
+          ./gradlew assembleRelease --no-daemon \
+            -PreactNativeArchitectures=armeabi-v7a,arm64-v8a \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+      - name: Name the APK
+        id: apk
+        run: |
+          SHORT=${GITHUB_SHA::7}
+          OUT="ragoh-${SHORT}.apk"
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk "$OUT"
+          ls -lh "$OUT"
+          echo "file=$OUT" >> "$GITHUB_OUTPUT"
+          echo "### Android APK built :iphone:" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download **$OUT** from the Artifacts section below." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ragoh-android-apk
+          path: ${{ steps.apk.outputs.file }}
+          retention-days: 30

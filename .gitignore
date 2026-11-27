@@ -36,3 +36,8 @@ build/
 
 # OS
 .DS_Store
+
+# Expo / Android build output
+apps/mobile/android/
+apps/mobile/ios/
+.expo-shared/

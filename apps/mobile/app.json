@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "RAGOH",
+    "slug": "ragoh",
+    "scheme": "ragoh",
+    "version": "0.5.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "android": {
+      "package": "ng.ragoh.app",
+      "versionCode": 5,
+      "adaptiveIcon": {
+        "backgroundColor": "#0F5132",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "RAGOH records your location during your shift and when you fill a survey.",
+          "locationAlwaysAndWhenInUsePermission": "RAGOH records your location during your shift, even when the app is in the background. Nothing is recorded when your shift is off.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "RAGOH uses the camera for photo questions in surveys."
+        }
+      ],
+      "@maplibre/maplibre-react-native",
+      "expo-status-bar"
+    ],
+    "extra": {
+      "defaultApiUrl": ""
+    }
+  }
+}
