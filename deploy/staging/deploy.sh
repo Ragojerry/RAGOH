@@ -29,6 +29,11 @@ JWT_SECRET=$(param JWT_SECRET)
 ADMIN_PASSWORD=$(param ADMIN_PASSWORD)
 DEMO_PASSWORD=$(param DEMO_PASSWORD)
 SENTRY_DSN=$(param SENTRY_DSN 2>/dev/null || true)
+ES_API_KEY=$(param ES_API_KEY 2>/dev/null || true)
+DHIS2_PASSWORD=$(param DHIS2_PASSWORD 2>/dev/null || true)
+DIGIT_PASSWORD=$(param DIGIT_PASSWORD 2>/dev/null || true)
+WEBHOOK_SECRET=$(param WEBHOOK_SECRET 2>/dev/null || true)
+DIGIT_CLIENT_AUTH=$(param DIGIT_CLIENT_AUTH 2>/dev/null || true)
 EOF
 
 REGISTRY="${API_IMAGE%%/*}"
@@ -81,6 +86,7 @@ cat > /etc/cron.d/ragoh-maintenance <<EOF
 45 2 * * * root cd $APP_DIR && docker compose exec -T api python -m app.maintenance retention >> /var/log/ragoh-maintenance.log 2>&1
 30 3 * * * root cd $APP_DIR && docker compose exec -T api python -m app.maintenance flags >> /var/log/ragoh-maintenance.log 2>&1
 */10 * * * * root cd $APP_DIR && docker compose exec -T api python -m app.maintenance watch >> /var/log/ragoh-maintenance.log 2>&1
+*/5 * * * * root cd $APP_DIR && docker compose exec -T api python -m app.integrations run >> /var/log/ragoh-integrations.log 2>&1
 EOF
 chmod 644 /etc/cron.d/ragoh-maintenance
 

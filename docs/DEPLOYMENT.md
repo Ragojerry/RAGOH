@@ -66,6 +66,7 @@ Staging is seeded with an FCT pilot: the FCT and its six area councils (**approx
 | Logs as JSON | The API writes one JSON object per line (`RAGOH_LOG_JSON=true`): `docker compose logs api \| grep '"level": "ERROR"'` |
 | Crash reporting (optional) | Server errors: put a Sentry DSN (sentry.io or self-hosted) in Parameter Store `/ragoh/staging/SENTRY_DSN` and redeploy; request bodies, headers and users are stripped before sending. Phone errors arrive as "app_error" events: crash count per phone on the **Phones** page. |
 | Battery and data use | Dashboard → **Phones** (from each phone's end-of-shift report); method in `docs/MEASUREMENTS.md` |
+| Integrations | Dashboard → **Integrations** (admins): status, errors, run now, settings; secrets in Parameter Store. Logs: `/var/log/ragoh-integrations.log`. Setup in `docs/INTEGRATIONS.md` |
 | Load test | On a scratch database only: `uv run python -m app.perftest --api http://localhost:8000 --collectors 1000` (then `--cleanup`) |
 | Stop paying for staging | Stop the instance in the EC2 console (≈ only disk and IP are charged while stopped), or ask Claude to add a schedule |
 

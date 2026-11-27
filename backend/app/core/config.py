@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     # Observability: JSON log lines (for CloudWatch/grep) and optional Sentry (self-hosted ok).
     log_json: bool = False
     sentry_dsn: str | None = None
+    # Integration secrets (Phase 7b): from SSM Parameter Store, never campaign config.
+    es_api_key: str | None = None  # Elasticsearch API key (base64 id:key), or
+    es_username: str | None = None
+    es_password: str | None = None
+    dhis2_password: str | None = None
+    digit_password: str | None = None
+    digit_client_auth: str = "ZWdvdi11c2VyLWNsaWVudDo="  # DIGIT default "egov-user-client:"
+    webhook_secret: str | None = None  # HMAC key for the signed-webhook mode
     routing_timeout_s: float = 10.0
     # Offline map assets (tiles, fonts, style layers) produced by the routing-data workflow.
     tiles_dir: str = "/data/tiles"

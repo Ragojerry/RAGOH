@@ -113,6 +113,42 @@ DEFAULT_CAMPAIGN_CONFIG: dict[str, Any] = {
         "notifications_days": 60,
         "audit_days": 730,  # who viewed/exported tracking data: kept two years
     },
+    # Connectors to other systems (Phase 7b). All off by default; passwords and keys
+    # never go here — they come from the server environment (RAGOH_* settings / SSM).
+    "integrations": {
+        "elasticsearch": {
+            "enabled": False,
+            "url": None,  # e.g. https://es.example.org:9200
+            "index_prefix": "ragoh",
+            "collector_label": "name",  # name / username / id (pseudonymous)
+            "every_min": 5,
+        },
+        "dhis2": {
+            "enabled": False,
+            "url": None,  # e.g. https://dhis2.example.org
+            "username": None,
+            "data_set": None,  # optional dataSet uid
+            "days_back": 7,  # late syncs change recent days: re-send them
+            "dry_run": False,
+            "every_min": 60,
+            # RAGOH area code -> DHIS2 org unit uid (wards or LGAs)
+            "org_units": {},
+            # RAGOH indicator -> DHIS2 data element uid (only mapped ones are sent)
+            "data_elements": {},
+            "category_option_combo": None,
+            "attribute_option_combo": None,
+        },
+        "digit": {
+            "enabled": False,
+            "url": None,  # DIGIT base URL, e.g. https://hcm.example.org
+            "endpoint": None,  # path that accepts RAGOH events (confirm with the HCM team)
+            "auth": "digit",  # digit (egov-user OAuth + RequestInfo) or hmac (signed webhook)
+            "tenant_id": None,
+            "username": None,
+            "user_type": "EMPLOYEE",
+            "every_min": 10,
+        },
+    },
     # Shown to every user at first sign-in (NDPA 2023). Bump notice_version when the
     # wording or a retention period changes, so everyone sees and accepts it again.
     "privacy": {

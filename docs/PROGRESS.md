@@ -10,8 +10,16 @@
 | 5 — Flags + follow-up | In review (PR #6) |
 | 6 — Supervisor mobile mode | In review (PR #7) |
 | 7 — Supervisor web dashboard | In review (PR #8) |
-| 7b — Integrations (DHIS2, Elasticsearch, DIGIT HCM) | Not started |
-| 8 — Hardening | **In review** (PR) |
+| 7b — Integrations (DHIS2, Elasticsearch, DIGIT HCM) | **In review** (PR) |
+| 8 — Hardening | In review (PR #9) |
+
+## Phase 7b — what's built
+- Connector framework: scheduled runner (cron every 5 min, per-connector `every_min`), per-campaign state and cursors with a 5-minute look-back, savepoint per connector, partial-failure progress, admin API (status, run now, DHIS2 preview).
+- Elasticsearch: submissions, stops, day summaries, flags; index templates (geo_point, flattened answers); idempotent upserts; pseudonymous labels option.
+- DHIS2: 10 daily indicators per mapped ward/LGA via `dataValueSets` (`CREATE_AND_UPDATE`, dry run), last N days re-sent.
+- DIGIT HCM: visit outcomes, supervision/back-check results and closed flags as event batches, exactly once; DIGIT egov-user OAuth + RequestInfo, or HMAC-signed webhook; receiving endpoint configurable.
+- Dashboard **Integrations** page (admins): status, errors, run now, settings, DHIS2 preview. Integration settings admin-only (fixes managers being able to redirect data).
+- Docs: `docs/INTEGRATIONS.md`, ADR 010. Tests: 12 new (backend 138).
 
 ## Phase 1 — what's built
 - Backend (`backend/`): FastAPI app, settings, PostgreSQL/PostGIS models, first Alembic migration, idempotent FCT seed.
@@ -91,6 +99,7 @@
 - Hausa, Yorùbá, Igbo and Pidgin translations need native translators (`pnpm --filter @ragoh/mobile i18n:extract` produces the list); the privacy notice is English only for now.
 - Battery use is not measured yet: run the protocol in `docs/MEASUREMENTS.md` during the first pilot week.
 - Release signing key not created yet (owner action, `docs/DEPLOYMENT.md` → Signing).
+- DIGIT HCM: confirm with the HCM team which endpoint/entity receives RAGOH events before switching the connector on (`docs/INTEGRATIONS.md`).
 - FCT area-council boundaries in the seed are approximate rectangles — import official boundaries (GRID3/OCHA) via `POST /api/v1/admin-areas/import`.
 - PIN is handled on the phone only (salted, hashed; wiped after 5 wrong tries) — no server endpoint needed.
 - The offline map and road routing need one run of the **Routing data** workflow after the first deploy (until then the app uses OpenStreetMap online tiles and straight-line estimates). The workflow itself has not run yet.
