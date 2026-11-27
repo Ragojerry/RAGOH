@@ -217,6 +217,12 @@ class Device(TimestampMixin, Base):
     push_token: Mapped[str | None] = mapped_column(Text)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Lost or stolen phone: blocked, sessions revoked, and optionally told to erase itself.
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blocked_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    block_reason: Mapped[str | None] = mapped_column(String(300))
+    wipe_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    wiped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Consent(Base):
@@ -670,3 +676,17 @@ class AppConfig(Base):
     __tablename__ = "app_config"
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[Any] = mapped_column(JSONB)
+
+
+# ---------------------------------------------------------------------------
+# Composite indexes for the hot read paths (Phase 8 tuning): day replay, team analytics,
+# flags inbox, live view, audit log viewer, retention jobs.
+# ---------------------------------------------------------------------------
+Index("ix_stops_user_date", Stop.user_id, Stop.local_date)
+Index("ix_submissions_user_ended", Submission.user_id, Submission.ended_at)
+Index("ix_assignments_collector_status", Assignment.collector_id, Assignment.status)
+Index("ix_flags_collector_date", Flag.collector_id, Flag.local_date)
+Index("ix_flags_status_severity", Flag.status, Flag.severity)
+Index("ix_device_events_user_time", DeviceEvent.user_id, DeviceEvent.occurred_at)
+Index("ix_audit_logs_action_time", AuditLog.action, AuditLog.created_at)
+Index("ix_notifications_status", Notification.status)

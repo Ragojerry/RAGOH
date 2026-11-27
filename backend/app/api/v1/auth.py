@@ -64,6 +64,23 @@ def login(body: LoginIn, request: Request, db: DB) -> TokenOut:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong username or password")
     if user.status != UserStatus.active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Account disabled")
+    if body.device_id is not None:
+        from app.db.models import Device
+
+        device = db.get(Device, body.device_id)
+        if device is not None and device.is_blocked:
+            audit(
+                db,
+                "login_blocked_device",
+                actor_id=user.id,
+                entity="device",
+                entity_id=device.id,
+                ip=ip,
+            )
+            db.commit()
+            raise HTTPException(
+                status.HTTP_423_LOCKED, "This phone has been blocked. Contact your supervisor."
+            )
 
     limiter.reset(body.username, ip)
     user.last_login_at = datetime.now(UTC)

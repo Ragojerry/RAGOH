@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     expo_push_url: str = "https://exp.host/--/api/v2/push/send"
     expo_access_token: str | None = None
     push_enabled: bool = True
+    # Observability: JSON log lines (for CloudWatch/grep) and optional Sentry (self-hosted ok).
+    log_json: bool = False
+    sentry_dsn: str | None = None
     routing_timeout_s: float = 10.0
     # Offline map assets (tiles, fonts, style layers) produced by the routing-data workflow.
     tiles_dir: str = "/data/tiles"
