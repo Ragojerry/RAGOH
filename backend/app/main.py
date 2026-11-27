@@ -6,10 +6,12 @@ from sqlalchemy import text
 
 from app import __version__
 from app.api.v1 import (
+    analytics,
     areas,
     auth,
     campaigns,
     collectors,
+    exports,
     flags,
     forms,
     live,
@@ -55,6 +57,8 @@ for module in (
     flags,
     routes,
     live,
+    analytics,
+    exports,
 ):
     api.include_router(module.router)
 app.include_router(api)

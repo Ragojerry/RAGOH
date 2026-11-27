@@ -88,5 +88,6 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - /opt/ragoh/data/caddy:/data
       - /opt/ragoh/data/tiles/assets:/srv/map-assets:ro
+      - ./web:/srv/web:ro
     depends_on: [api, tiles]
     mem_limit: 128m

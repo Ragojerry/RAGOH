@@ -8,8 +8,8 @@
 | 3 — Tracking + stops | In review (PR #4) |
 | 4 — Routing | In review (PR #5) |
 | 5 — Flags + follow-up | In review (PR #6) |
-| 6 — Supervisor mobile mode | **In review** (PR) |
-| 7 — Supervisor web dashboard | Not started |
+| 6 — Supervisor mobile mode | In review (PR #7) |
+| 7 — Supervisor web dashboard | **In review** (PR) |
 | 7b — Integrations (DHIS2, Elasticsearch, DIGIT HCM) | Not started |
 | 8 — Hardening | Not started |
 
@@ -58,6 +58,15 @@
 - Fixed: messages pushed from a supervisor's phone weren't limited to users the supervisor can see.
 - Tests: backend 106 (17 new), sync engine 20 (8 new, including a vector sealed by the phone library and opened by the server). ADR 007.
 
+## Phase 7 — what's built
+- Web dashboard (`apps/web`, React + Vite + MapLibre): live map, route replay with planned vs actual route and stops sized by dwell time, team overview (tiles, daily charts, sortable collector comparison), coverage (map + table + supervision coverage), flags inbox with every follow-up action, exports. Guide: `docs/DASHBOARD.md`.
+- Server: `/map/areas.geojson`, `/map/points.geojson`, `/analytics/team`, `/analytics/coverage`, `/exports/{submissions,stops,flags,points,tracks}` (CSV/XLSX/GeoJSON, scoped, audited, formula-safe); planned route in the day replay.
+- Pilot server: Caddy serves the dashboard at the site root; the deploy builds and ships it; smoke test checks it.
+- Fixed: managers saw every team on the live view; now limited to their geography.
+- Simulator CLI marks visits done like the phone.
+- Checked in a real browser against a local API with simulated days (live map, replay, team, coverage, flags drawer → resolve, Excel export download).
+- Tests: backend 116 (10 new), web 6. ADR 008.
+
 ## Decisions
 - AWS region eu-north-1 (Stockholm) — the account is on the AWS free plan, which only allows this region.
 - AWS bootstrap done: OIDC role `ragoh-github-deploy`, state bucket `ragoh-tfstate-568898409880-eu-north-1`, budget `ragoh-monthly` (USD 100). GitHub variables and `production` environment set.
@@ -67,6 +76,8 @@
 ## Open TODO(stub) items
 - Push notifications need the one-time Firebase + Expo setup in `docs/MOBILE.md` → Push (owner action). Until then supervisors get in-app alerts only.
 - Background tracking, heartbeats and QR handover still need testing on real pilot phones (Tecno/Infinix/itel).
+- The seed has area councils but no wards; coverage by ward appears once ward boundaries are imported.
+- Dashboard is light mode only (the dark status colours failed the colour-blind check).
 - FCT area-council boundaries in the seed are approximate rectangles — import official boundaries (GRID3/OCHA) via `POST /api/v1/admin-areas/import`.
 - MinIO is in the local compose file but not used until photo upload (Phase 2).
 - PIN is handled on the phone only (salted, hashed; wiped after 5 wrong tries) — no server endpoint needed.

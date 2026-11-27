@@ -46,6 +46,14 @@ fi
 
 docker compose pull --quiet
 docker compose up -d --remove-orphans
+# The Caddyfile is a single-file bind mount: a new version (new inode) is only seen after
+# a restart. Restart only when it changed, to avoid needless downtime.
+NEW_SUM=$(sha256sum Caddyfile | cut -d' ' -f1)
+if [ "$NEW_SUM" != "$(cat data/caddy.sha256 2>/dev/null)" ]; then
+  echo "Caddyfile changed; restarting caddy"
+  docker compose restart caddy
+  echo "$NEW_SUM" > data/caddy.sha256
+fi
 if [ -n "$routing_changed" ]; then
   echo "Routing/map data updated; restarting routing services"
   docker compose restart osrm vroom tiles

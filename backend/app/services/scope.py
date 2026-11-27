@@ -108,3 +108,26 @@ def visible_user_ids_condition(db: Session, user: User) -> ColumnElement[bool]:
 def can_see_area(db: Session, user: User, area: AdminArea) -> bool:
     paths = allowed_area_paths(db, user)
     return paths is None or any(area.path.startswith(p) for p in paths)
+
+
+def visible_team_ids(db: Session, user: User) -> list[uuid.UUID]:
+    """Teams whose live data, analytics and exports this user may see.
+
+    Admin: every team of the organisation's campaigns. Manager: teams whose area lies in
+    their geography. Supervisor: the teams they supervise. Collector: none.
+    """
+    from app.db.models import Campaign
+
+    if user.role == Role.supervisor:
+        return supervised_team_ids(db, user)
+    if user.role == Role.collector:
+        return []
+    stmt = (
+        select(Team.id)
+        .join(Campaign, Campaign.id == Team.campaign_id)
+        .join(AdminArea, AdminArea.id == Team.admin_area_id)
+        .where(Campaign.organisation_id == user.organisation_id)
+    )
+    if user.role == Role.manager:
+        stmt = stmt.where(area_filter(db, user, AdminArea.path))
+    return list(db.scalars(stmt))

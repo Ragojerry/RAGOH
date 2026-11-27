@@ -435,6 +435,15 @@ class DeviceEventOut(BaseModel):
     details: dict[str, Any]
 
 
+class PlannedRouteOut(BaseModel):
+    created_at: datetime
+    source: str
+    distance_m: float
+    duration_s: int
+    stop_order: list[str] = Field(description="assignment ids in the suggested order")
+    geometry: list[list[float]] = Field(description="[lon, lat]")
+
+
 class CollectorDayOut(BaseModel):
     user: UserOut
     date: date
@@ -443,6 +452,9 @@ class CollectorDayOut(BaseModel):
     submissions: list[DaySubmissionOut]
     events: list[DeviceEventOut]
     track: list[list[float]] = Field(description="[lon, lat, unix_seconds] simplified to ~10 m")
+    planned: PlannedRouteOut | None = Field(
+        default=None, description="Latest route plan the collector made that day"
+    )
 
 
 class ConsentIn(BaseModel):
