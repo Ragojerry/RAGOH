@@ -1,0 +1,118 @@
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useCallback, useState } from "react";
+import { Alert, Linking, Modal, ScrollView, Text, View } from "react-native";
+import { Button, Card, Chip, H1, Input, Label, Muted, colors, styles } from "@/components/ui";
+import { bearingDeg, compassPoint, formatDistance, haversineM } from "@/lib/geo";
+import { currentLocation } from "@/lib/location";
+import { findDraft, getAssignment, listForms, setAssignmentStatus } from "@/lib/repo";
+import { useSession } from "@/lib/session";
+import { DONE_STATUSES, STATUS_LABEL, type Assignment, type AssignmentStatus, type FormInfo, type Location } from "@/lib/types";
+
+const OUTCOMES: { status: AssignmentStatus; label: string; ask: string }[] = [
+  { status: "not_found", label: "Not found", ask: "What happened? (e.g. house demolished, wrong location)" },
+  { status: "refused", label: "Refused", ask: "Reason for refusal" },
+  { status: "skipped", label: "Skip for now", ask: "Why are you skipping this point?" },
+];
+
+export default function PointDetail() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { runSync } = useSession();
+  const [a, setA] = useState<Assignment | null>(null);
+  const [forms, setForms] = useState<FormInfo[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, boolean>>({});
+  const [me, setMe] = useState<Location | null>(null);
+  const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number] | null>(null);
+  const [reason, setReason] = useState("");
+
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        const assignment = await getAssignment(id);
+        setA(assignment);
+        if (!assignment) return;
+        const fs = (await listForms("survey")).filter((f) => f.campaign_id === assignment.visit_point.campaign_id);
+        setForms(fs);
+        const d: Record<string, boolean> = {};
+        for (const f of fs) d[f.version_id] = !!(await findDraft(f.version_id, assignment.id));
+        setDrafts(d);
+        setMe(await currentLocation(8000));
+      })();
+    }, [id]),
+  );
+
+  if (!a) return <View style={styles.screen}><Muted>Loading…</Muted></View>;
+  const p = a.visit_point;
+  const dist = me ? haversineM(me, p) : undefined;
+  const inside = dist !== undefined && dist <= p.geofence_m;
+
+  const saveOutcome = async () => {
+    if (!outcome) return;
+    if (!reason.trim()) return Alert.alert("Reason needed", outcome.ask);
+    await setAssignmentStatus(a.id, outcome.status, reason.trim());
+    setOutcome(null);
+    setReason("");
+    runSync();
+    router.back();
+  };
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <H1>{p.name}</H1>
+      <View style={styles.row}>
+        <Chip text={STATUS_LABEL[a.status]} tone={DONE_STATUSES.includes(a.status) ? "ok" : "neutral"} />
+        <Muted>{p.external_id} · {p.type}</Muted>
+      </View>
+
+      <Card>
+        <Label>Where</Label>
+        {dist !== undefined ? (
+          <Text style={{ fontSize: 20, fontWeight: "800", color: inside ? colors.ok : colors.text }}>
+            {inside ? "You are at this point" : `${formatDistance(dist)} ${compassPoint(bearingDeg(me!, p))}`}
+          </Text>
+        ) : (
+          <Muted>Getting your location…</Muted>
+        )}
+        <Muted>{p.lat.toFixed(5)}, {p.lon.toFixed(5)} · arrival radius {p.geofence_m} m</Muted>
+        <Button title="Directions" variant="secondary" onPress={() => Linking.openURL(`geo:${p.lat},${p.lon}?q=${p.lat},${p.lon}(${encodeURIComponent(p.name)})`)} />
+      </Card>
+
+      {Object.keys(p.attributes ?? {}).length > 0 && (
+        <Card>
+          <Label>Details</Label>
+          {Object.entries(p.attributes).map(([k, v]) => (
+            <Muted key={k}>{k.replace(/_/g, " ")}: {String(v)}</Muted>
+          ))}
+        </Card>
+      )}
+
+      <Card>
+        <Label>Visit</Label>
+        {forms.length === 0 && <Muted>No survey form available yet. Sync to download forms.</Muted>}
+        {forms.map((f) => (
+          <Button
+            key={f.version_id}
+            title={drafts[f.version_id] ? `Continue: ${f.name}` : `Start: ${f.name}`}
+            onPress={() => router.push({ pathname: "/form/[versionId]", params: { versionId: f.version_id, assignmentId: a.id } })}
+          />
+        ))}
+        <View style={[styles.row, { flexWrap: "wrap" }]}>
+          {OUTCOMES.map((o) => (
+            <Button key={o.status} title={o.label} variant="secondary" onPress={() => setOutcome(o)} style={{ flexGrow: 1 }} />
+          ))}
+        </View>
+      </Card>
+
+      <Modal visible={!!outcome} transparent animationType="slide" onRequestClose={() => setOutcome(null)}>
+        <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}>
+          <View style={[styles.card, { borderRadius: 0, padding: 20 }]}>
+            <Label>{outcome?.label}</Label>
+            <Muted>{outcome?.ask}</Muted>
+            <Input value={reason} onChangeText={setReason} multiline style={{ minHeight: 90, textAlignVertical: "top" }} autoFocus />
+            <Button title="Save" onPress={saveOutcome} />
+            <Button title="Cancel" variant="secondary" onPress={() => setOutcome(null)} />
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
+  );
+}

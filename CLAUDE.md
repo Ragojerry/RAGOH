@@ -22,3 +22,7 @@ RAGOH is a field supervision, survey and route-tracking system for public health
 - TypeScript: strict mode, ESLint, Prettier, Vitest.
 - All thresholds and tunables live in config, not code.
 - Commit messages: imperative, short subject, body explaining why.
+
+## Running tests in a cloud session
+- With Docker Hub reachable: `docker compose up -d db redis`, then `cd backend && uv sync && uv run pytest`.
+- Without Docker Hub: `apt-get install -y postgresql-16-postgis-3`, start PostgreSQL, create user/db `ragoh`/`ragoh_test` (password `ragoh`), then `uv run pytest`.

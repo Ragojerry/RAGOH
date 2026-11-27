@@ -1,0 +1,55 @@
+{
+ "schema_version": 1,
+ "id_string": "ragoh_backcheck",
+ "version": "2026112601",
+ "title": "Back-check",
+ "fields": [
+  {
+   "type": "select_one",
+   "name": "visited",
+   "label": "Did a data collector visit this household recently?",
+   "required": "yes",
+   "choices": [
+    {
+     "name": "yes",
+     "label": "Yes"
+    },
+    {
+     "name": "no",
+     "label": "No"
+    }
+   ]
+  },
+  {
+   "type": "integer",
+   "name": "hh_size",
+   "label": "How many people live in this household?",
+   "relevant": "${visited} = 'yes'",
+   "constraint": ". >= 1 and . <= 40",
+   "required": "yes"
+  },
+  {
+   "type": "select_one",
+   "name": "has_net",
+   "label": "Does the household own a mosquito net?",
+   "relevant": "${visited} = 'yes'",
+   "required": "yes",
+   "choices": [
+    {
+     "name": "yes",
+     "label": "Yes"
+    },
+    {
+     "name": "no",
+     "label": "No"
+    }
+   ]
+  },
+  {
+   "type": "text",
+   "name": "notes",
+   "label": "Notes",
+   "appearance": "multiline"
+  }
+ ]
+}
