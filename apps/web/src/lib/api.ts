@@ -121,6 +121,11 @@ export async function post<T>(path: string, body: unknown): Promise<T> {
   return (r.status === 204 ? undefined : await r.json()) as T;
 }
 
+export async function put<T>(path: string, body: unknown): Promise<T> {
+  const r = await raw(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return (r.status === 204 ? undefined : await r.json()) as T;
+}
+
 /** Download a file (export) with the auth header, then hand it to the browser. */
 export async function download(path: string, params: Record<string, string | null | undefined>): Promise<void> {
   const r = await raw(withQuery(path, params));

@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.core.defaults import merged_config
 from app.core.deps import DB, AdminUser, CurrentUser, ManagerOrAdmin
-from app.db.models import Campaign, Organisation
+from app.db.models import Campaign, Organisation, Role
 from app.schemas import CampaignConfigOut, CampaignCreate, CampaignOut
 from app.services.audit import audit
 
@@ -46,9 +46,11 @@ def _get(db: DB, campaign_id: uuid.UUID, org_id: uuid.UUID) -> Campaign:
 @router.get("/{campaign_id}/config", response_model=CampaignConfigOut)
 def get_config(campaign_id: uuid.UUID, db: DB, user: CurrentUser) -> CampaignConfigOut:
     c = _get(db, campaign_id, user.organisation_id)
-    return CampaignConfigOut(
-        campaign_id=c.id, overrides=c.config or {}, effective=merged_config(c.config)
-    )
+    overrides, effective = dict(c.config or {}), merged_config(c.config)
+    if user.role != Role.admin:  # where data is sent is for admins only
+        overrides.pop("integrations", None)
+        effective.pop("integrations", None)
+    return CampaignConfigOut(campaign_id=c.id, overrides=overrides, effective=effective)
 
 
 @router.put("/{campaign_id}/config", response_model=CampaignConfigOut)
@@ -56,6 +58,13 @@ def put_config(
     campaign_id: uuid.UUID, overrides: dict[str, Any], db: DB, user: ManagerOrAdmin
 ) -> CampaignConfigOut:
     c = _get(db, campaign_id, user.organisation_id)
+    if user.role != Role.admin:
+        # Integrations decide where personal data is sent: only admins may change them.
+        current = (c.config or {}).get("integrations")
+        if overrides.get("integrations", current) != current:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only admins can change integrations")
+        if current is not None:
+            overrides = {**overrides, "integrations": current}
     c.config = overrides
     audit(
         db,

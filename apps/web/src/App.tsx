@@ -6,6 +6,7 @@ import { CoveragePage } from "./pages/Coverage";
 import { DevicesPage } from "./pages/Devices";
 import { ExportsPage } from "./pages/Exports";
 import { FlagsPage } from "./pages/Flags";
+import { IntegrationsPage } from "./pages/Integrations";
 import { LivePage } from "./pages/Live";
 import { LoginPage } from "./pages/Login";
 import { PrivacyPage } from "./pages/Privacy";
@@ -37,6 +38,9 @@ export function App() {
           {user.role !== "supervisor" && (
             <NavLink to="/audit" className={({ isActive }) => (isActive ? "active" : "")}>Audit log</NavLink>
           )}
+          {user.role === "admin" && (
+            <NavLink to="/integrations" className={({ isActive }) => (isActive ? "active" : "")}>Integrations</NavLink>
+          )}
         </nav>
         <NavLink to="/privacy" className="small" style={{ color: "#d8e8df" }}>Privacy</NavLink>
         <span className="small">{user.full_name} · {user.role}</span>
@@ -53,6 +57,7 @@ export function App() {
         <Route path="/phones" element={<DevicesPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/integrations" element={<IntegrationsPage />} />
         <Route path="*" element={<Navigate to="/live" replace />} />
       </Routes>
     </BrowserRouter>

@@ -29,6 +29,12 @@ services:
       RAGOH_ENV: staging
       RAGOH_LOG_JSON: "true"
       RAGOH_SENTRY_DSN: ${SENTRY_DSN:-}
+      # Integration secrets (optional; set in Parameter Store /ragoh/staging/*)
+      RAGOH_ES_API_KEY: ${ES_API_KEY:-}
+      RAGOH_DHIS2_PASSWORD: ${DHIS2_PASSWORD:-}
+      RAGOH_DIGIT_PASSWORD: ${DIGIT_PASSWORD:-}
+      RAGOH_WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      RAGOH_DIGIT_CLIENT_AUTH: ${DIGIT_CLIENT_AUTH:-ZWdvdi11c2VyLWNsaWVudDo=}
       RAGOH_DATABASE_URL: postgresql+psycopg://ragoh:${DB_PASSWORD}@db:5432/ragoh
       RAGOH_REDIS_URL: redis://redis:6379/0
       RAGOH_JWT_SECRET: ${JWT_SECRET}

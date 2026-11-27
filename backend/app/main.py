@@ -14,6 +14,7 @@ from app.api.v1 import (
     exports,
     flags,
     forms,
+    integrations,
     live,
     routes,
     sync,
@@ -73,6 +74,7 @@ for module in (
     exports,
     devices,
     audit_logs,
+    integrations,
 ):
     api.include_router(module.router)
 app.include_router(api)

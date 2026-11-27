@@ -679,6 +679,25 @@ class AppConfig(Base):
 
 
 # ---------------------------------------------------------------------------
+# Integrations (Phase 7b)
+# ---------------------------------------------------------------------------
+class IntegrationState(Base):
+    """Progress of one connector for one campaign: where it got to and how the last run went."""
+
+    __tablename__ = "integration_states"
+    name: Mapped[str] = mapped_column(String(40), primary_key=True)  # elasticsearch / dhis2 / digit
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), primary_key=True
+    )
+    cursor: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_status: Mapped[str | None] = mapped_column(String(20))  # ok / error / skipped
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_stats: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
+
+
+# ---------------------------------------------------------------------------
 # Composite indexes for the hot read paths (Phase 8 tuning): day replay, team analytics,
 # flags inbox, live view, audit log viewer, retention jobs.
 # ---------------------------------------------------------------------------
