@@ -77,7 +77,7 @@ def latest_versions(db: Session, campaign_ids: list[uuid.UUID], kinds: set[FormK
     )
     if kinds:
         stmt = stmt.where(Form.kind.in_(kinds))
-    return list(db.execute(stmt).tuples())
+    return list(db.execute(stmt).tuples().all())
 
 
 def version_out(form: Form, v: FormVersion, include_schema: bool) -> FormVersionOut:

@@ -93,6 +93,11 @@ class AssignmentStatus(enum.StrEnum):
     skipped = "skipped"
 
 
+class AssignmentKind(enum.StrEnum):
+    visit = "visit"
+    backcheck = "backcheck"
+
+
 class TeamRole(enum.StrEnum):
     collector = "collector"
     supervisor = "supervisor"
@@ -271,6 +276,12 @@ class Assignment(TimestampMixin, Base):
     status_reason: Mapped[str | None] = mapped_column(Text)
     status_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     assigned_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[AssignmentKind] = mapped_column(
+        _enum(AssignmentKind, "assignment_kind"),
+        default=AssignmentKind.visit,
+        server_default="visit",
+    )
+    note: Mapped[str | None] = mapped_column(Text)
 
 
 # ---------------------------------------------------------------------------
@@ -464,6 +475,8 @@ class CollectorDaySummary(Base):
     assigned: Mapped[int] = mapped_column(Integer, default=0)
     completed: Mapped[int] = mapped_column(Integer, default=0)
     n_submissions: Mapped[int] = mapped_column(Integer, default=0)
+    risk_score: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    risk_breakdown: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -485,6 +498,108 @@ class RoutePlanned(Base):
     distance_m: Mapped[float] = mapped_column(Float)
     duration_s: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Flags and follow-up (Phase 5)
+# ---------------------------------------------------------------------------
+class FlagStatus(enum.StrEnum):
+    new = "new"
+    acknowledged = "acknowledged"
+    under_review = "under_review"
+    resolved = "resolved"
+    dismissed = "dismissed"
+
+
+class Severity(enum.StrEnum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+
+
+class Flag(TimestampMixin, Base):
+    """Something unusual about a collector's work that a supervisor should look at."""
+
+    __tablename__ = "flags"
+    id: Mapped[uuid.UUID] = _uuid()
+    rule_id: Mapped[str] = mapped_column(String(10), index=True)
+    campaign_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("campaigns.id"))
+    collector_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    local_date: Mapped[date] = mapped_column(Date, index=True)
+    subject_type: Mapped[str] = mapped_column(
+        String(30)
+    )  # day | submission | assignment | stop | gap | flag
+    subject_id: Mapped[str] = mapped_column(String(80))
+    severity: Mapped[Severity] = mapped_column(_enum(Severity, "severity"))
+    title: Mapped[str] = mapped_column(String(200))
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    status: Mapped[FlagStatus] = mapped_column(
+        _enum(FlagStatus, "flag_status"), default=FlagStatus.new, index=True
+    )
+    escalated: Mapped[bool] = mapped_column(Boolean, default=False)
+    collector_visible: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolution_comment: Mapped[str | None] = mapped_column(Text)
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint("rule_id", "collector_id", "local_date", "subject_type", "subject_id"),
+    )
+
+
+class FlagAction(Base):
+    __tablename__ = "flag_actions"
+    id: Mapped[uuid.UUID] = _uuid()
+    flag_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("flags.id", ondelete="CASCADE"), index=True
+    )
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(String(30))
+    comment: Mapped[str | None] = mapped_column(Text)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Message(Base):
+    __tablename__ = "messages"
+    id: Mapped[uuid.UUID] = _uuid()
+    sender_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    recipient_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teams.id"), index=True
+    )  # broadcast
+    flag_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("flags.id"))
+    body: Mapped[str] = mapped_column(Text)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BackcheckStatus(enum.StrEnum):
+    assigned = "assigned"
+    completed = "completed"
+    cancelled = "cancelled"
+
+
+class Backcheck(Base):
+    """A short re-interview to verify a visit, done by another collector or the supervisor."""
+
+    __tablename__ = "backchecks"
+    id: Mapped[uuid.UUID] = _uuid()
+    visit_point_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("visit_points.id"))
+    original_submission_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("submissions.id"))
+    original_collector_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    assigned_to: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    requested_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    flag_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("flags.id"))
+    assignment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("assignments.id"))
+    status: Mapped[BackcheckStatus] = mapped_column(
+        _enum(BackcheckStatus, "backcheck_status"), default=BackcheckStatus.assigned
+    )
+    backcheck_submission_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("submissions.id"))
+    match: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 # ---------------------------------------------------------------------------

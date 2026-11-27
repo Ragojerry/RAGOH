@@ -12,14 +12,16 @@ assignments, so this is small and avoids a whole class of "missed deletion" bugs
 
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from app.api.v1.flags import _supervises, messages_for, my_team_ids
 from app.api.v1.forms import latest_versions, version_out
 from app.api.v1.visit_points import point_out
 from app.core.config import get_settings
@@ -27,18 +29,25 @@ from app.core.defaults import merged_config
 from app.core.deps import DB, CurrentUser
 from app.db.models import (
     Assignment,
+    Backcheck,
+    BackcheckStatus,
     Campaign,
     Device,
     DeviceEvent,
+    Flag,
+    FlagAction,
+    FlagStatus,
     FormKind,
     FormVersion,
     GpsPoint,
+    Message,
     Role,
     Shift,
     Submission,
     SubmissionMedia,
     Team,
     TeamMember,
+    TeamRole,
     User,
     VisitPoint,
 )
@@ -52,6 +61,9 @@ from app.schemas import (
     GeoPointIn,
     MediaOut,
     RejectedItem,
+    SyncContactOut,
+    SyncFlagOut,
+    SyncMessageOut,
     SyncPullOut,
     SyncPushIn,
     SyncPushOut,
@@ -139,9 +151,36 @@ def pull(db: DB, user: CurrentUser) -> SyncPullOut:
             planned_date=a.planned_date,
             status=a.status,
             visit_point=point_out(p),
+            kind=a.kind.value,
+            note=a.note,
         )
         for a, p in rows
     ]
+    msgs = messages_for(db, user, since=datetime.now(UTC) - timedelta(days=14))
+    senders: dict[uuid.UUID, str] = {}
+    if msgs:
+        ids = {m.sender_id for m in msgs}
+        senders = {
+            uid: name
+            for uid, name in db.execute(select(User.id, User.full_name).where(User.id.in_(ids)))
+        }
+    my_flags = db.scalars(
+        select(Flag).where(
+            Flag.collector_id == user.id,
+            Flag.collector_visible.is_(True),
+            Flag.status.not_in([FlagStatus.resolved, FlagStatus.dismissed]),
+        )
+    )
+    supervisors = db.scalars(
+        select(User)
+        .join(TeamMember, TeamMember.user_id == User.id)
+        .where(
+            TeamMember.role_in_team == TeamRole.supervisor,
+            TeamMember.active_to.is_(None),
+            TeamMember.team_id.in_(my_team_ids(db, user)),
+        )
+        .distinct()
+    )
     return SyncPullOut(
         server_time=datetime.now(UTC),
         user=UserOut.model_validate(user),
@@ -150,6 +189,33 @@ def pull(db: DB, user: CurrentUser) -> SyncPullOut:
         ],
         forms=forms,
         assignments=assignments,
+        messages=[
+            SyncMessageOut(
+                id=m.id,
+                sender_id=m.sender_id,
+                sender_name=senders.get(m.sender_id, ""),
+                recipient_id=m.recipient_id,
+                flag_id=m.flag_id,
+                body=m.body,
+                sent_at=m.sent_at,
+            )
+            for m in msgs
+        ],
+        my_flags=[
+            SyncFlagOut(
+                id=f.id,
+                title=f.title,
+                local_date=f.local_date,
+                status=f.status.value,
+                details=f.details,
+            )
+            for f in my_flags
+        ],
+        supervisors=[
+            SyncContactOut(id=u.id, full_name=u.full_name, phone=u.phone)
+            for u in supervisors
+            if u.id != user.id
+        ],
     )
 
 
@@ -168,6 +234,8 @@ def push(
         + len(body.assignment_updates)
         + len(body.gps_points)
         + len(body.device_events)
+        + len(body.messages)
+        + len(body.flag_replies)
     )
     if total > settings.max_push_records:
         raise HTTPException(413, f"Send at most {settings.max_push_records} records per push")
@@ -179,6 +247,10 @@ def push(
         "shifts": [],
         "submissions": [],
         "assignment_updates": [],
+        "gps_points": [],
+        "device_events": [],
+        "messages": [],
+        "flag_replies": [],
     }
     rejected: list[RejectedItem] = []
 
@@ -322,6 +394,64 @@ def push(
             )
         accepted["device_events"].append(ev.id)
 
+    # Messages written on the phone (to a supervisor of the user's team).
+    for pm in body.messages:
+        if db.get(Message, pm.id) is not None:
+            accepted["messages"].append(pm.id)
+            continue
+        if user.role == Role.collector and not _supervises(db, pm.recipient_id, user.id):
+            rejected.append(
+                RejectedItem(kind="message", id=pm.id, error="recipient is not your supervisor")
+            )
+            continue
+        db.add(
+            Message(
+                id=pm.id,
+                sender_id=user.id,
+                recipient_id=pm.recipient_id,
+                body=pm.body,
+                sent_at=pm.sent_at,
+            )
+        )
+        accepted["messages"].append(pm.id)
+
+    # Explanations for flags the supervisor asked about.
+    for fr in body.flag_replies:
+        if db.get(FlagAction, fr.id) is not None:
+            accepted["flag_replies"].append(fr.id)
+            continue
+        flag = db.get(Flag, fr.flag_id)
+        if flag is None or flag.collector_id != user.id or not flag.collector_visible:
+            rejected.append(RejectedItem(kind="flag_reply", id=fr.id, error="flag not found"))
+            continue
+        db.add(
+            FlagAction(
+                id=fr.id,
+                flag_id=flag.id,
+                actor_id=user.id,
+                action="reply",
+                comment=fr.comment,
+                created_at=fr.sent_at,
+            )
+        )
+        asker = db.scalar(
+            select(FlagAction.actor_id)
+            .where(FlagAction.flag_id == flag.id, FlagAction.action == "request_explanation")
+            .order_by(FlagAction.created_at.desc())
+        )
+        if asker:
+            db.add(
+                Message(
+                    sender_id=user.id,
+                    recipient_id=asker,
+                    flag_id=flag.id,
+                    body=fr.comment,
+                    sent_at=fr.sent_at,
+                )
+            )
+        accepted["flag_replies"].append(fr.id)
+
+    complete_backchecks(db, [s.id for s in body.submissions if s.id in accepted["submissions"]])
     touched.extend(s.ended_at for s in body.submissions if s.id in accepted["submissions"])
     db.commit()
 
@@ -332,6 +462,71 @@ def push(
             run_processing, session_factory, {(user.id, d) for d in local_dates(touched, tz)}
         )
     return SyncPushOut(server_time=now, accepted=accepted, rejected=rejected)
+
+
+def complete_backchecks(db: Session, submission_ids: list[uuid.UUID]) -> None:
+    """A back-check submission closes its back-check and records how it compares."""
+    for sid in submission_ids:
+        sub = db.get(Submission, sid)
+        if sub is None or sub.assignment_id is None:
+            continue
+        bc = db.scalar(
+            select(Backcheck).where(
+                Backcheck.assignment_id == sub.assignment_id,
+                Backcheck.status == BackcheckStatus.assigned,
+            )
+        )
+        if bc is None:
+            continue
+        original = (
+            db.get(Submission, bc.original_submission_id) if bc.original_submission_id else None
+        )
+        bc.match = compare_answers(original.data if original else {}, sub.data)
+        bc.status, bc.backcheck_submission_id, bc.completed_at = (
+            BackcheckStatus.completed,
+            sub.id,
+            datetime.now(UTC),
+        )
+        if bc.flag_id:
+            db.add(
+                FlagAction(
+                    flag_id=bc.flag_id,
+                    actor_id=sub.user_id,
+                    action="backcheck_completed",
+                    data={"backcheck_id": str(bc.id), **bc.match},
+                )
+            )
+
+
+def compare_answers(original: dict[str, Any], check: dict[str, Any]) -> dict[str, Any]:
+    """Compare answers to questions asked in both interviews."""
+    common = [
+        k
+        for k, v in check.items()
+        if k in original
+        and isinstance(v, str | int | float | bool)
+        and not isinstance(original[k], dict | list)
+    ]
+    differ = [
+        {"question": k, "original": original[k], "backcheck": check[k]}
+        for k in common
+        if str(original[k]) != str(check[k])
+    ]
+    if not original:
+        return {
+            "compared": 0,
+            "matching": 0,
+            "match_share": None,
+            "differences": [],
+            "note": "no original survey found",
+        }
+    share = round((len(common) - len(differ)) / len(common), 2) if common else None
+    return {
+        "compared": len(common),
+        "matching": len(common) - len(differ),
+        "match_share": share,
+        "differences": differ,
+    }
 
 
 @router.post("/submissions/{submission_id}/media", response_model=MediaOut)

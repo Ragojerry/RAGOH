@@ -112,7 +112,7 @@ def day_plan(body: DayPlanIn, db: DB, user: CurrentUser) -> DayPlanOut:
     )
     if body.assignment_ids:
         stmt = stmt.where(Assignment.id.in_(body.assignment_ids))
-    rows = list(db.execute(stmt).tuples())
+    rows = list(db.execute(stmt).tuples().all())
     if not rows:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No open visits to plan")
 

@@ -284,3 +284,24 @@ def test_retention_removes_only_old_raw_points(
     result = apply_retention(db, days=90)
     assert result["deleted_points"] + result["dropped_partitions"] >= 1
     assert db.scalar(select(func.count()).select_from(GpsPoint)) == 1
+
+
+def test_device_events_are_stored_once(client: TestClient, placed: dict, db: Session) -> None:
+    from app.db.models import DeviceEvent
+
+    ev = {
+        "id": str(uuid.uuid4()),
+        "type": "gps_off",
+        "occurred_at": datetime.now(UTC).isoformat(),
+        "details": {},
+    }
+    body = {
+        "device": {"id": str(uuid.uuid4())},
+        "device_time": datetime.now(UTC).isoformat(),
+        "device_events": [ev],
+    }
+    for _ in range(2):
+        r = client.post("/api/v1/sync/push", json=body, headers=auth(client, "col_a"))
+        assert r.status_code == 200, r.text
+        assert r.json()["accepted"]["device_events"] == [ev["id"]]
+    assert db.scalar(select(func.count()).select_from(DeviceEvent)) == 1

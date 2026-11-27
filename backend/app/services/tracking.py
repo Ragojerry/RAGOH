@@ -284,11 +284,14 @@ def _base_places(
 
 
 def run_processing(factory: SessionFactory, work: set[tuple[uuid.UUID, date]]) -> None:
-    """Background task: recompute each affected collector-day in its own transaction."""
+    """Background task: recompute stops, summary and flags for each affected collector-day."""
+    from app.services.flags import evaluate_day  # local import: flags depends on this module
+
     for user_id, d in sorted(work):
         try:
             with factory() as db:
                 process_collector_day(db, user_id, d)
+                evaluate_day(db, user_id, d)
                 db.commit()
         except Exception:
             log.exception("Stop processing failed for %s on %s", user_id, d)

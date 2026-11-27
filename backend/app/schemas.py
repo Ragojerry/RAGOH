@@ -181,6 +181,8 @@ class AssignmentOut(BaseModel):
     planned_date: date | None
     status: AssignmentStatus
     visit_point: VisitPointOut
+    kind: str = "visit"
+    note: str | None = None
 
 
 # --- Forms ------------------------------------------------------------------
@@ -266,6 +268,20 @@ class DeviceEventIn(BaseModel):
     details: dict[str, Any] = {}
 
 
+class PhoneMessageIn(BaseModel):
+    id: uuid.UUID
+    recipient_id: uuid.UUID
+    body: str = Field(min_length=1, max_length=2000)
+    sent_at: datetime
+
+
+class FlagReplyIn(BaseModel):
+    id: uuid.UUID
+    flag_id: uuid.UUID
+    comment: str = Field(min_length=1, max_length=2000)
+    sent_at: datetime
+
+
 class SyncPushIn(BaseModel):
     device: DeviceIn
     device_time: datetime
@@ -274,6 +290,8 @@ class SyncPushIn(BaseModel):
     assignment_updates: list[AssignmentUpdateIn] = []
     gps_points: list[GpsPointIn] = []
     device_events: list[DeviceEventIn] = []
+    messages: list[PhoneMessageIn] = []
+    flag_replies: list[FlagReplyIn] = []
 
 
 class RejectedItem(BaseModel):
@@ -294,12 +312,41 @@ class CampaignSyncOut(BaseModel):
     config: dict[str, Any]
 
 
+class SyncMessageOut(BaseModel):
+    id: uuid.UUID
+    sender_id: uuid.UUID
+    sender_name: str
+    recipient_id: uuid.UUID | None
+    flag_id: uuid.UUID | None
+    body: str
+    sent_at: datetime
+
+
+class SyncFlagOut(BaseModel):
+    """A flag the supervisor asked this collector to explain."""
+
+    id: uuid.UUID
+    title: str
+    local_date: date
+    status: str
+    details: dict[str, Any]
+
+
+class SyncContactOut(BaseModel):
+    id: uuid.UUID
+    full_name: str
+    phone: str | None
+
+
 class SyncPullOut(BaseModel):
     server_time: datetime
     user: UserOut
     campaigns: list[CampaignSyncOut]
     forms: list[FormVersionOut]
     assignments: list[AssignmentOut]
+    messages: list[SyncMessageOut] = []
+    my_flags: list[SyncFlagOut] = []
+    supervisors: list[SyncContactOut] = []
 
 
 class MediaOut(BaseModel):

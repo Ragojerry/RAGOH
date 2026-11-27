@@ -10,6 +10,7 @@ from app.api.v1 import (
     auth,
     campaigns,
     collectors,
+    flags,
     forms,
     routes,
     sync,
@@ -40,7 +41,20 @@ app.add_middleware(
 )
 
 api = APIRouter(prefix="/api/v1")
-for module in (auth, users, areas, campaigns, teams, visit_points, forms, sync, collectors, routes):
+for module in (
+    auth,
+    users,
+    areas,
+    campaigns,
+    teams,
+    visit_points,
+    forms,
+    sync,
+    collectors,
+    flags,
+    routes,
+    flags,
+):
     api.include_router(module.router)
 app.include_router(api)
 
