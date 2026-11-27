@@ -56,7 +56,7 @@
 - Device-to-device relay: per-collector key (`GET /me/relay-key`), sealed bundles (ChaCha20-Poly1305 + zlib) carried by a supervisor's phone and stored on the server as the collector's own records; tampering, wrong collector and other teams' supervisors are refused; old bundles don't count as a wrong phone clock.
 - Phone: supervisor mode (team home, live map, collector detail, go-to route, route replay, flags inbox + all actions, spot check prefilled, move points, messages to collectors), cached for offline with "as of" times; collector heartbeat on shift; push registration and notification taps; animated-QR handover (collector shows, supervisor scans).
 - Fixed: messages pushed from a supervisor's phone weren't limited to users the supervisor can see.
-- Tests: backend 107 (17 new), sync engine 20 (8 new, including a vector sealed by the phone library and opened by the server). ADR 007.
+- Tests: backend 106 (17 new), sync engine 20 (8 new, including a vector sealed by the phone library and opened by the server). ADR 007.
 
 ## Decisions
 - AWS region eu-north-1 (Stockholm) — the account is on the AWS free plan, which only allows this region.
