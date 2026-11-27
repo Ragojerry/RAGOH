@@ -97,6 +97,23 @@ jobs:
           echo "file=$OUT" >> "$GITHUB_OUTPUT"
           echo "### Android APK built :iphone:" >> "$GITHUB_STEP_SUMMARY"
           echo "Download **$OUT** from the Artifacts section below." >> "$GITHUB_STEP_SUMMARY"
+      - name: Sign with the release key (when configured)
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          APK="${{ steps.apk.outputs.file }}"
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "APK signing: Android debug key (set ANDROID_KEYSTORE_B64 for a release key) — see docs/DEPLOYMENT.md" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          SIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          "$SIGNER" sign --ks "$RUNNER_TEMP/release.keystore" --ks-pass env:KS_PASS --ks-key-alias "$KEY_ALIAS" "$APK"
+          "$SIGNER" verify --print-certs "$APK" | head -3
+          rm -f "$RUNNER_TEMP/release.keystore"
+          echo "APK signing: release key" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: ragoh-android-apk

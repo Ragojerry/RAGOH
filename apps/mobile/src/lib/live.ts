@@ -33,6 +33,10 @@ export async function heartbeat(force = false): Promise<boolean> {
     const every = Number((await getMeta("heartbeat_every_s")) ?? DEFAULT_EVERY_S);
     const last = Number((await getMeta("heartbeat_at")) ?? 0);
     if (!force && Date.now() - last < every * 1000 - 5000) return false;
+    // A sync that just succeeded already told the server where we are (GPS points carry
+    // position and battery): skip the heartbeat to save data.
+    const synced = await getMeta("last_sync_ok_at");
+    if (!force && synced && Date.now() - new Date(synced).getTime() < every * 1000) return false;
     const [shift, fix, counts, level] = await Promise.all([
       activeShift(),
       lastFix(),

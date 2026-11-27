@@ -59,7 +59,26 @@ Staging is seeded with an FCT pilot: the FCT and its six area councils (**approx
 | Restore a backup | Session → `aws s3 cp s3://…/postgres/ragoh-YYYYMMDD.dump /tmp/r.dump && sudo docker compose exec -T db pg_restore -U ragoh -d ragoh --clean < /tmp/r.dump` |
 | Rotate a password | Change the value in Parameter Store, then re-run the Deploy workflow (admin/demo passwords only apply when the user is first created; use `POST /api/v1/users/{id}/reset-password` for existing users) |
 | Use your own domain | Point a DNS A record at the server IP, set `domain_name` in `infra/terraform/envs/staging/variables.tf`, merge |
+| Lost or stolen phone | Dashboard → **Phones** → **Block…** (tick **Also erase it**). The phone is signed out at once; it erases itself the next time it is online. Recorded in the audit log. |
+| Who looked at whose data | Dashboard → **Audit log** (managers/admins) → "Access to personal data" |
+| Retention | Nightly at 02:45: GPS points older than 90 days, device events 180 days, notifications 60 days, audit log 2 years (campaign config `retention`). Stops and daily summaries are kept. |
+| Change the privacy notice | Edit campaign config `privacy` (or the text in `backend/app/core/privacy.py`) and raise `notice_version`: every user must accept again at their next sign-in or unlock |
+| Logs as JSON | The API writes one JSON object per line (`RAGOH_LOG_JSON=true`): `docker compose logs api \| grep '"level": "ERROR"'` |
+| Crash reporting (optional) | Server errors: put a Sentry DSN (sentry.io or self-hosted) in Parameter Store `/ragoh/staging/SENTRY_DSN` and redeploy; request bodies, headers and users are stripped before sending. Phone errors arrive as "app_error" events: crash count per phone on the **Phones** page. |
+| Battery and data use | Dashboard → **Phones** (from each phone's end-of-shift report); method in `docs/MEASUREMENTS.md` |
+| Load test | On a scratch database only: `uv run python -m app.perftest --api http://localhost:8000 --collectors 1000` (then `--cleanup`) |
 | Stop paying for staging | Stop the instance in the EC2 console (≈ only disk and IP are charged while stopped), or ask Claude to add a schedule |
+
+## Signing the Android app (recommended before handing phones out)
+
+Without a release key, the APK is signed with Android's shared debug key: it installs fine, but anyone could build an "update" that Android accepts. With a release key, only your builds can update the app. **Keep the key safe: if it is lost, every phone must uninstall and reinstall to get updates.**
+
+1. Create a keystore (any machine with Java, or a GitHub Codespace): `keytool -genkeypair -v -keystore ragoh-release.keystore -alias ragoh -keyalg RSA -keysize 4096 -validity 10000`
+2. Save it somewhere safe (password manager or encrypted drive), then add three repository secrets (Settings → Secrets and variables → Actions):
+   - `ANDROID_KEYSTORE_B64` — the file base64-encoded (`base64 -w0 ragoh-release.keystore`)
+   - `ANDROID_KEYSTORE_PASSWORD` — its password
+   - `ANDROID_KEY_ALIAS` — `ragoh`
+3. Re-run the **Mobile** workflow; the summary says "APK signing: release key". Phones with a debug-signed app must uninstall it once before installing the release-signed one (sync first).
 
 ## Costs (estimate)
 

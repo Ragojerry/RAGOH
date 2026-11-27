@@ -9,9 +9,9 @@
 | 4 — Routing | In review (PR #5) |
 | 5 — Flags + follow-up | In review (PR #6) |
 | 6 — Supervisor mobile mode | In review (PR #7) |
-| 7 — Supervisor web dashboard | **In review** (PR) |
+| 7 — Supervisor web dashboard | In review (PR #8) |
 | 7b — Integrations (DHIS2, Elasticsearch, DIGIT HCM) | Not started |
-| 8 — Hardening | Not started |
+| 8 — Hardening | **In review** (PR) |
 
 ## Phase 1 — what's built
 - Backend (`backend/`): FastAPI app, settings, PostgreSQL/PostGIS models, first Alembic migration, idempotent FCT seed.
@@ -67,6 +67,16 @@
 - Checked in a real browser against a local API with simulated days (live map, replay, team, coverage, flags drawer → resolve, Excel export download).
 - Tests: backend 116 (10 new), web 6. ADR 008.
 
+## Phase 8 — what's built
+- Privacy notice (NDPA) generated from config, versioned, required at first sign-in and after changes; readable in the app and on the dashboard.
+- Lost or stolen phone: block (sessions revoked, sync and sign-in refused) and remote erase; Phones page in the dashboard with crash counts.
+- Audit log viewer (managers/admins); retention extended to device events, notifications and audit log.
+- Mobile data: gzip uploads, ETag pulls, fewer heartbeats — ≈1.5 → 0.6 MB/day estimated; battery and data measured per shift by the phones and shown on the Phones page.
+- Performance: composite indexes; load test with 1,000 collectors (live view 0.55 s, 3,000-point replay 0.08 s).
+- Translations framework (5 languages wired, English complete, others await translators), crash capture on the phone, JSON logs and optional Sentry on the server, optional release signing of the APK.
+- Guides: `docs/guides/COLLECTOR_GUIDE.md`, `docs/guides/SUPERVISOR_GUIDE.md`; operations in `docs/DEPLOYMENT.md`; measurements in `docs/MEASUREMENTS.md`. ADR 009.
+- Tests: backend 126 (10 new), sync engine 21, mobile 6, web 6.
+
 ## Decisions
 - AWS region eu-north-1 (Stockholm) — the account is on the AWS free plan, which only allows this region.
 - AWS bootstrap done: OIDC role `ragoh-github-deploy`, state bucket `ragoh-tfstate-568898409880-eu-north-1`, budget `ragoh-monthly` (USD 100). GitHub variables and `production` environment set.
@@ -78,12 +88,12 @@
 - Background tracking, heartbeats and QR handover still need testing on real pilot phones (Tecno/Infinix/itel).
 - The seed has area councils but no wards; coverage by ward appears once ward boundaries are imported.
 - Dashboard is light mode only (the dark status colours failed the colour-blind check).
+- Hausa, Yorùbá, Igbo and Pidgin translations need native translators (`pnpm --filter @ragoh/mobile i18n:extract` produces the list); the privacy notice is English only for now.
+- Battery use is not measured yet: run the protocol in `docs/MEASUREMENTS.md` during the first pilot week.
+- Release signing key not created yet (owner action, `docs/DEPLOYMENT.md` → Signing).
 - FCT area-council boundaries in the seed are approximate rectangles — import official boundaries (GRID3/OCHA) via `POST /api/v1/admin-areas/import`.
-- MinIO is in the local compose file but not used until photo upload (Phase 2).
 - PIN is handled on the phone only (salted, hashed; wiped after 5 wrong tries) — no server endpoint needed.
 - The offline map and road routing need one run of the **Routing data** workflow after the first deploy (until then the app uses OpenStreetMap online tiles and straight-line estimates). The workflow itself has not run yet.
 - Photos inside repeat groups are not uploaded yet (server accepts top-level photo fields only).
-- APK is signed with the default debug key — fine for the pilot; a proper release key is needed before wider distribution (Phase 8).
 - Barcode questions are typed by hand (camera scanning later).
-- No push notifications yet (Phase 6): collectors see supervisor questions after their next sync.
 - Background tracking has not been field-tested yet: test on the pilot team's actual phones (battery savers on Tecno/Infinix/itel are the main risk). Tracking does not restart by itself after a phone reboot until the app is opened.
