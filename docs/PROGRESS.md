@@ -7,8 +7,8 @@
 | 2 — Mobile core (offline) | In review (PR #3) |
 | 3 — Tracking + stops | In review (PR #4) |
 | 4 — Routing | In review (PR #5) |
-| 5 — Flags + follow-up | **In review** (PR) |
-| 6 — Supervisor mobile mode | Not started |
+| 5 — Flags + follow-up | In review (PR #6) |
+| 6 — Supervisor mobile mode | **In review** (PR) |
 | 7 — Supervisor web dashboard | Not started |
 | 7b — Integrations (DHIS2, Elasticsearch, DIGIT HCM) | Not started |
 | 8 — Hardening | Not started |
@@ -50,6 +50,14 @@
 - Fixed: pushing phone events (GPS off, tracking restarted) failed on the server since Phase 3 — now tested.
 - Tests: backend 89 (16 new for flags), sync engine 12. ADR 006.
 
+## Phase 6 — what's built
+- Server: heartbeats and `GET /team/live` (each collector's last position, status moving / at point / idle / off shift / no signal, progress, flags, risk); `GET /team/assignments` and `POST /assignments/reassign` (open points within a team, audited, both collectors notified); `GET /routes/between` (go to a collector); team roster in the sync pull.
+- Push notifications via Expo: queued in a `notifications` table in the same transaction, sent after commit, deduplicated; high-severity flags, messages (any path), back-checks, reassignment; `python -m app.maintenance watch` every 10 min for "no signal during shift" and "shift not started", with quiet hours. Dead tokens are dropped.
+- Device-to-device relay: per-collector key (`GET /me/relay-key`), sealed bundles (ChaCha20-Poly1305 + zlib) carried by a supervisor's phone and stored on the server as the collector's own records; tampering, wrong collector and other teams' supervisors are refused; old bundles don't count as a wrong phone clock.
+- Phone: supervisor mode (team home, live map, collector detail, go-to route, route replay, flags inbox + all actions, spot check prefilled, move points, messages to collectors), cached for offline with "as of" times; collector heartbeat on shift; push registration and notification taps; animated-QR handover (collector shows, supervisor scans).
+- Fixed: messages pushed from a supervisor's phone weren't limited to users the supervisor can see.
+- Tests: backend 107 (17 new), sync engine 20 (8 new, including a vector sealed by the phone library and opened by the server). ADR 007.
+
 ## Decisions
 - AWS region eu-north-1 (Stockholm) — the account is on the AWS free plan, which only allows this region.
 - AWS bootstrap done: OIDC role `ragoh-github-deploy`, state bucket `ragoh-tfstate-568898409880-eu-north-1`, budget `ragoh-monthly` (USD 100). GitHub variables and `production` environment set.
@@ -57,6 +65,8 @@
 - Stack: React Native + Expo, FastAPI + PostGIS, OSRM (foot, FCT only) + VROOM, React + Vite dashboard.
 
 ## Open TODO(stub) items
+- Push notifications need the one-time Firebase + Expo setup in `docs/MOBILE.md` → Push (owner action). Until then supervisors get in-app alerts only.
+- Background tracking, heartbeats and QR handover still need testing on real pilot phones (Tecno/Infinix/itel).
 - FCT area-council boundaries in the seed are approximate rectangles — import official boundaries (GRID3/OCHA) via `POST /api/v1/admin-areas/import`.
 - MinIO is in the local compose file but not used until photo upload (Phase 2).
 - PIN is handled on the phone only (salted, hashed; wiped after 5 wrong tries) — no server endpoint needed.
