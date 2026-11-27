@@ -10,19 +10,26 @@ The pull is a full snapshot rather than a delta: a collector has tens to a few h
 assignments, so this is small and avoids a whole class of "missed deletion" bugs.
 """
 
+import base64
+import binascii
 import os
 import uuid
+import zlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile, status
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.api.v1.flags import _supervises, messages_for, my_team_ids
 from app.api.v1.forms import latest_versions, version_out
+from app.api.v1.live import _team_collectors
 from app.api.v1.visit_points import point_out
 from app.core.config import get_settings
 from app.core.defaults import merged_config
@@ -61,15 +68,19 @@ from app.schemas import (
     GeoPointIn,
     MediaOut,
     RejectedItem,
+    RelayIn,
     SyncContactOut,
     SyncFlagOut,
     SyncMessageOut,
     SyncPullOut,
     SyncPushIn,
     SyncPushOut,
+    TeamMemberSyncOut,
     UserOut,
 )
+from app.services.audit import audit
 from app.services.geo import point_wkt
+from app.services.push import deliver_pending
 from app.services.tracking import (
     DEFAULT_TZ,
     SessionFactory,
@@ -81,6 +92,7 @@ from app.services.tracking import (
 
 router = APIRouter(tags=["sync"])
 
+MAX_RELAY_PLAIN = 8 * 1024 * 1024  # decompressed bundle limit (zip-bomb guard)
 ALLOWED_MEDIA = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 
 
@@ -108,7 +120,7 @@ def user_campaign_ids(db: Session, user: User) -> list[uuid.UUID]:
     return list(db.scalars(stmt))
 
 
-def _register_device(db: Session, user: User, body: SyncPushIn) -> Device:
+def _register_device(db: Session, user: User, body: SyncPushIn, seen: bool = True) -> Device:
     device = db.get(Device, body.device.id)
     if device is None:
         device = Device(id=body.device.id)
@@ -121,7 +133,8 @@ def _register_device(db: Session, user: User, body: SyncPushIn) -> Device:
     device.model = body.device.model
     device.android_version = body.device.android_version
     device.app_version = body.device.app_version
-    device.last_seen_at = datetime.now(UTC)
+    if seen:
+        device.last_seen_at = datetime.now(UTC)
     db.flush()
     return device
 
@@ -216,42 +229,46 @@ def pull(db: DB, user: CurrentUser) -> SyncPullOut:
             for u in supervisors
             if u.id != user.id
         ],
+        team_members=[
+            TeamMemberSyncOut(
+                id=u.id,
+                username=u.username,
+                full_name=u.full_name,
+                phone=u.phone,
+                team_id=t.id,
+                team_name=t.name,
+            )  # fmt: skip
+            for u, t in (_team_collectors(db, user) if user.role != Role.collector else [])
+        ],
     )
 
 
-@router.post("/sync/push", response_model=SyncPushOut)
-def push(
+RECORD_KINDS = (
+    "shifts", "submissions", "assignment_updates", "gps_points", "device_events", "messages",
+    "flag_replies",
+)  # fmt: skip
+
+
+def _count(body: SyncPushIn) -> int:
+    return sum(len(getattr(body, k)) for k in RECORD_KINDS)
+
+
+def apply_records(
+    db: Session,
+    user: User,
+    device: Device,
     body: SyncPushIn,
-    db: DB,
-    user: CurrentUser,
-    background: BackgroundTasks,
-    session_factory: SessionFactory = Depends(get_session_factory),
-) -> SyncPushOut:
-    settings = get_settings()
-    total = (
-        len(body.shifts)
-        + len(body.submissions)
-        + len(body.assignment_updates)
-        + len(body.gps_points)
-        + len(body.device_events)
-        + len(body.messages)
-        + len(body.flag_replies)
-    )
-    if total > settings.max_push_records:
-        raise HTTPException(413, f"Send at most {settings.max_push_records} records per push")
+    reference_time: datetime | None = None,
+) -> tuple[dict[str, list[uuid.UUID]], list[RejectedItem], list[datetime]]:
+    """Store one batch of a user's offline records. Idempotent: replays are acknowledged.
 
-    now = datetime.now(UTC)
-    device = _register_device(db, user, body)
+    Used for a phone's own push and for data relayed through a supervisor's phone.
+    `reference_time` is the true time at which `body.device_time` was read (for a relay,
+    the moment the supervisor scanned it), so the phone's clock error can be measured.
+    """
+    now = reference_time or datetime.now(UTC)
     clock_offset = int((body.device_time - now).total_seconds())
-    accepted: dict[str, list[uuid.UUID]] = {
-        "shifts": [],
-        "submissions": [],
-        "assignment_updates": [],
-        "gps_points": [],
-        "device_events": [],
-        "messages": [],
-        "flag_replies": [],
-    }
+    accepted: dict[str, list[uuid.UUID]] = {k: [] for k in RECORD_KINDS}
     rejected: list[RejectedItem] = []
 
     # Shifts: insert, or update the end time of a shift we already have.
@@ -451,16 +468,107 @@ def push(
             )
         accepted["flag_replies"].append(fr.id)
 
-    complete_backchecks(db, [s.id for s in body.submissions if s.id in accepted["submissions"]])
+    accepted_subs = [s.id for s in body.submissions if s.id in accepted["submissions"]]
+    complete_backchecks(db, accepted_subs)
     touched.extend(s.ended_at for s in body.submissions if s.id in accepted["submissions"])
-    db.commit()
+    return accepted, rejected, touched
 
-    if touched:
-        campaign = user_campaign(db, user.id)
-        tz = campaign.timezone if campaign else DEFAULT_TZ
-        background.add_task(
-            run_processing, session_factory, {(user.id, d) for d in local_dates(touched, tz)}
-        )
+
+def _supervisor_may_relay(db: Session, actor: User, collector: User) -> bool:
+    if collector.organisation_id != actor.organisation_id:
+        return False
+    if actor.role in (Role.admin, Role.manager):
+        return True
+    return actor.role == Role.supervisor and _supervises(db, actor.id, collector.id)
+
+
+def open_relay(key: bytes, relay: RelayIn) -> SyncPushIn:
+    """Decrypt and parse a sealed bundle. Raises ValueError if it is not genuine."""
+    try:
+        nonce = base64.b64decode(relay.nonce, validate=True)
+        ct = base64.b64decode(relay.ciphertext, validate=True)
+        plain = ChaCha20Poly1305(key).decrypt(nonce, ct, relay.collector_id.bytes)
+        d = zlib.decompressobj()
+        raw = d.decompress(plain, MAX_RELAY_PLAIN)
+        if d.unconsumed_tail or not d.eof:
+            raise ValueError("bundle too large or truncated")
+        return SyncPushIn.model_validate_json(raw)
+    except (InvalidTag, binascii.Error, zlib.error) as e:
+        raise ValueError("bundle could not be opened (wrong key or damaged)") from e
+    except ValidationError as e:
+        raise ValueError(f"bundle content is invalid: {e.error_count()} errors") from e
+
+
+@router.post("/sync/push", response_model=SyncPushOut)
+def push(
+    body: SyncPushIn,
+    db: DB,
+    user: CurrentUser,
+    background: BackgroundTasks,
+    session_factory: SessionFactory = Depends(get_session_factory),
+) -> SyncPushOut:
+    settings = get_settings()
+    if _count(body) > settings.max_push_records:
+        raise HTTPException(413, f"Send at most {settings.max_push_records} records per push")
+
+    now = datetime.now(UTC)
+    device = _register_device(db, user, body)
+    accepted, rejected, touched = apply_records(db, user, device, body)
+    work: set[tuple[uuid.UUID, Any]] = set()
+    tz_of: dict[uuid.UUID, str] = {}
+
+    def add_work(uid: uuid.UUID, stamps: list[datetime]) -> None:
+        if not stamps:
+            return
+        if uid not in tz_of:
+            c = user_campaign(db, uid)
+            tz_of[uid] = c.timezone if c else DEFAULT_TZ
+        work.update((uid, d) for d in local_dates(stamps, tz_of[uid]))
+
+    add_work(user.id, touched)
+
+    # Data carried from collectors' phones that had no network (device-to-device).
+    accepted["relays"] = []
+    for relay in body.relays:
+        collector = db.get(User, relay.collector_id)
+        if collector is None or not _supervisor_may_relay(db, user, collector):
+            rejected.append(RejectedItem(kind="relay", id=relay.id, error="not your collector"))
+            continue
+        if collector.relay_key is None:
+            rejected.append(RejectedItem(kind="relay", id=relay.id, error="collector has no key"))
+            continue
+        try:
+            inner = open_relay(collector.relay_key, relay)
+        except ValueError as e:
+            rejected.append(RejectedItem(kind="relay", id=relay.id, error=str(e)))
+            continue
+        if _count(inner) > settings.max_push_records:
+            rejected.append(RejectedItem(kind="relay", id=relay.id, error="bundle too large"))
+            continue
+        try:
+            with db.begin_nested():
+                c_device = _register_device(db, collector, inner, seen=False)
+                scanned = relay.scanned_at - (body.device_time - now)  # supervisor clock fix
+                r_acc, r_rej, r_touched = apply_records(db, collector, c_device, inner, scanned)
+        except HTTPException as e:
+            rejected.append(RejectedItem(kind="relay", id=relay.id, error=str(e.detail)))
+            continue
+        add_work(collector.id, r_touched)
+        accepted["relays"].append(relay.id)
+        audit(
+            db, "relay_received", actor_id=user.id, entity="user", entity_id=collector.id,
+            details={
+                "relay_id": str(relay.id),
+                "accepted": {k: len(v) for k, v in r_acc.items() if v},
+                "rejected": len(r_rej),
+            },
+        )  # fmt: skip
+
+    db.commit()
+    if work:
+        background.add_task(run_processing, session_factory, work)
+    else:
+        background.add_task(deliver_pending, session_factory)
     return SyncPushOut(server_time=now, accepted=accepted, rejected=rejected)
 
 

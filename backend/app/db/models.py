@@ -169,6 +169,8 @@ class User(TimestampMixin, Base):
     )
     language: Mapped[str] = mapped_column(String(8), default="en")
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Key the phone uses to seal data handed to a supervisor phone (device-to-device relay).
+    relay_key: Mapped[bytes | None] = mapped_column(LargeBinary)
 
     area_access: Mapped[list["UserAreaAccess"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -600,6 +602,49 @@ class Backcheck(Base):
     match: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Live supervision
+# ---------------------------------------------------------------------------
+class Heartbeat(Base):
+    """Latest "I'm alive" ping of each user's phone (one row per user, overwritten)."""
+
+    __tablename__ = "heartbeats"
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    device_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    geom: Mapped[Any] = mapped_column(
+        Geometry("POINT", srid=4326, spatial_index=False), nullable=True
+    )
+    accuracy_m: Mapped[float | None] = mapped_column(Float)
+    battery_pct: Mapped[int | None] = mapped_column(Integer)
+    shift_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    pending_count: Mapped[int] = mapped_column(Integer, default=0)
+    app_version: Mapped[str | None] = mapped_column(String(20))
+
+
+class Notification(Base):
+    """Push notifications we sent (or tried to). dedupe_key stops repeats of the same alert."""
+
+    __tablename__ = "notifications"
+    id: Mapped[uuid.UUID] = _uuid()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    dedupe_key: Mapped[str | None] = mapped_column(String(200), unique=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # sent/no_device/error
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -71,6 +71,7 @@ chmod 644 /etc/cron.d/ragoh-backup
 cat > /etc/cron.d/ragoh-maintenance <<EOF
 45 2 * * * root cd $APP_DIR && docker compose exec -T api python -m app.maintenance retention >> /var/log/ragoh-maintenance.log 2>&1
 30 3 * * * root cd $APP_DIR && docker compose exec -T api python -m app.maintenance flags >> /var/log/ragoh-maintenance.log 2>&1
+*/10 * * * * root cd $APP_DIR && docker compose exec -T api python -m app.maintenance watch >> /var/log/ragoh-maintenance.log 2>&1
 EOF
 chmod 644 /etc/cron.d/ragoh-maintenance
 

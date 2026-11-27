@@ -108,6 +108,20 @@ DEFAULT_CAMPAIGN_CONFIG: dict[str, Any] = {
     "risk": {"weights": {"low": 1, "medium": 3, "high": 8}, "max": 100},
     "offline_days": 7,
     "retention": {"raw_gps_days": 90},
+    # Live supervision (Phase 6)
+    "live": {
+        "heartbeat_every_s": 180,  # phone pings this often while on shift
+        "offline_after_min": 10,  # no heartbeat for this long -> shown as offline
+        "idle_after_min": 30,  # on shift, not moved this far in this long -> idle
+        "idle_radius_m": 50,
+        "at_point_m": 40,  # within this of an assigned point -> at point
+    },
+    "alerts": {
+        "push_high_flags": True,  # notify supervisors when a high-severity flag appears
+        "offline_during_shift_min": 30,  # notify if a collector on shift is silent this long
+        "shift_start_by": "09:00",  # notify if a collector with work today hasn't started
+        "quiet_after": "20:00",  # don't send alerts after this local time
+    },
 }
 
 

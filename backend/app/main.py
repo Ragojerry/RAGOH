@@ -12,6 +12,7 @@ from app.api.v1 import (
     collectors,
     flags,
     forms,
+    live,
     routes,
     sync,
     teams,
@@ -53,7 +54,7 @@ for module in (
     collectors,
     flags,
     routes,
-    flags,
+    live,
 ):
     api.include_router(module.router)
 app.include_router(api)

@@ -659,10 +659,12 @@ def _store(
         )
     }
     seen = set()
+    new_high: list[Flag] = []
     for c in candidates:
         key = (c.rule_id, c.subject_type, c.subject_id)
         seen.add(key)
         flag = existing.get(key)
+        is_new = flag is None
         if flag is None:
             flag = Flag(
                 rule_id=c.rule_id, campaign_id=campaign_id, collector_id=user_id, local_date=day,
@@ -672,11 +674,33 @@ def _store(
         flag.severity = Severity(cfg["flags"][c.rule_id]["severity"])
         flag.title = c.title or TITLES[c.rule_id]
         flag.details = c.details
+        if is_new and flag.severity == Severity.high:
+            new_high.append(flag)
     # Untouched flags that no longer apply disappear; anything a person acted on stays.
     for key, flag in existing.items():
         if key not in seen and flag.status == FlagStatus.new:
             db.delete(flag)
     db.flush()
+    if new_high and cfg.get("alerts", {}).get("push_high_flags", True):
+        _notify_high_flags(db, user_id, new_high)
+
+
+def _notify_high_flags(db: Session, collector_id: uuid.UUID, flags: list[Flag]) -> None:
+    from app.services.push import notify, supervisors_of
+
+    collector = db.get(User, collector_id)
+    name = collector.full_name if collector else "A collector"
+    for sup in supervisors_of(db, collector_id):
+        for f in flags:
+            notify(
+                db,
+                sup,
+                "flag",
+                f"High-priority flag: {name}",
+                f.title,
+                {"flag_id": str(f.id), "collector_id": str(collector_id)},
+                dedupe_key=f"flag:{f.id}:{sup}",
+            )
 
 
 def update_risk(db: Session, user_id: uuid.UUID, day: date, cfg: dict[str, Any]) -> int:
