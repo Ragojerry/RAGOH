@@ -45,6 +45,20 @@ jobs:
           uv run alembic upgrade head
           uv run alembic check
 
+  web:
+    name: Web dashboard (types, tests, build)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @ragoh/web...
+      - run: pnpm --filter @ragoh/web test
+      - run: pnpm --filter @ragoh/web build
+
   docker:
     name: API image builds
     runs-on: ubuntu-24.04

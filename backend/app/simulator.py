@@ -241,8 +241,18 @@ def push_day(
         results.append(
             _request(f"{api}/api/v1/sync/push", {**base, "gps_points": gps[i : i + 800]}, tok)
         )
+    # Like the phone: finishing a survey also marks the visit done.
+    updates = [
+        {"id": str(uuid.uuid4()), "assignment_id": s.assignment_id, "status": "completed",
+         "changed_at": s.ended_at.isoformat()}
+        for s in day.submissions
+    ]  # fmt: skip
     results.append(
-        _request(f"{api}/api/v1/sync/push", {**base, "shifts": [shift], "submissions": subs}, tok)
+        _request(
+            f"{api}/api/v1/sync/push",
+            {**base, "shifts": [shift], "submissions": subs, "assignment_updates": updates},
+            tok,
+        )
     )
     return {
         "scenario": scenario,

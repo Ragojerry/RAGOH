@@ -41,3 +41,5 @@ build/
 apps/mobile/android/
 apps/mobile/ios/
 .expo-shared/
+deploy/staging/web/
+apps/web/dist/

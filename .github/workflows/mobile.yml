@@ -6,10 +6,10 @@ name: Mobile
 
 on:
   pull_request:
-    paths: ["apps/**", "packages/**", "pnpm-lock.yaml", ".github/workflows/mobile.yml"]
+    paths: ["apps/mobile/**", "packages/**", "pnpm-lock.yaml", ".github/workflows/mobile.yml"]
   push:
     branches: [main]
-    paths: ["apps/**", "packages/**", "pnpm-lock.yaml", ".github/workflows/mobile.yml"]
+    paths: ["apps/mobile/**", "packages/**", "pnpm-lock.yaml", ".github/workflows/mobile.yml"]
   workflow_dispatch:
 
 permissions:

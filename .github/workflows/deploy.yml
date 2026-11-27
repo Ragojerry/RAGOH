@@ -70,6 +70,18 @@ jobs:
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Build the web dashboard
+        run: |
+          pnpm install --frozen-lockfile --filter @ragoh/web...
+          pnpm --filter @ragoh/web build
+          rm -rf deploy/staging/web && cp -r apps/web/dist deploy/staging/web
+
       - name: Upload deploy bundle
         run: aws s3 sync deploy/staging "s3://${{ steps.tf.outputs.deploy_bucket }}/bundle/" --delete
 
@@ -95,7 +107,8 @@ jobs:
           COMMANDS=$(jq -cn --arg b "$DEPLOY_BUCKET" --arg img "$IMAGE" --arg host "$HOST" \
             --arg region "$AWS_REGION" --arg bk "$BACKUP_BUCKET" --arg rb "$ROUTING_BUCKET" '{commands: [
               "for i in $(seq 1 60); do [ -f /opt/ragoh/.bootstrapped ] && break; sleep 5; done",
-              "aws s3 sync s3://\($b)/bundle/ /opt/ragoh/ --region \($region)",
+              "aws s3 sync s3://\($b)/bundle/ /opt/ragoh/ --region \($region) --exclude 'web/*'",
+              "aws s3 sync s3://\($b)/bundle/web/ /opt/ragoh/web/ --region \($region) --delete",
               "chmod +x /opt/ragoh/deploy.sh",
               "/opt/ragoh/deploy.sh \($img) \($host) \($region) \($bk) \($rb)"
             ]}')
@@ -124,7 +137,8 @@ jobs:
               echo "Staging is up: $URL"
               curl -fsS "$URL/version"; echo
               echo "### Staging deployed :rocket:" >> "$GITHUB_STEP_SUMMARY"
-              echo "API: $URL  ·  Docs: $URL/docs" >> "$GITHUB_STEP_SUMMARY"
+              curl -fsS "$URL/" | grep -q '<div id="root">' || { echo "::error::Dashboard not served at $URL/"; exit 1; }
+              echo "Dashboard: $URL  ·  API docs: $URL/docs" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 10
