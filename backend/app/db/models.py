@@ -375,6 +375,101 @@ class SubmissionMedia(Base):
 
 
 # ---------------------------------------------------------------------------
+# Tracking (Phase 3)
+# ---------------------------------------------------------------------------
+class GpsPoint(Base):
+    """Raw GPS fixes recorded during shifts. Partitioned by month on recorded_at.
+
+    The primary key includes recorded_at (required for partitioning); phones resend the
+    same (id, recorded_at) on retries, so inserts use ON CONFLICT DO NOTHING.
+    """
+
+    __tablename__ = "gps_points"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    shift_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    device_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    geom: Mapped[Any] = mapped_column(Geometry("POINT", srid=4326, spatial_index=False))
+    accuracy_m: Mapped[float | None] = mapped_column(Float)
+    altitude_m: Mapped[float | None] = mapped_column(Float)
+    speed_mps: Mapped[float | None] = mapped_column(Float)
+    bearing: Mapped[float | None] = mapped_column(Float)
+    battery_pct: Mapped[int | None] = mapped_column(Integer)
+    is_mock: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider: Mapped[str | None] = mapped_column(String(20))
+    network_type: Mapped[str | None] = mapped_column(String(20))
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_gps_points_user_time", "user_id", "recorded_at"),
+        {"postgresql_partition_by": "RANGE (recorded_at)"},
+    )
+
+
+class DeviceEvent(Base):
+    """Things the phone noticed: GPS switched off, mock location app, tracking restarted…"""
+
+    __tablename__ = "device_events"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    shift_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    device_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    type: Mapped[str] = mapped_column(String(40))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Stop(Base):
+    """A place where a collector stayed (computed from GPS; recomputed when new points arrive)."""
+
+    __tablename__ = "stops"
+    id: Mapped[uuid.UUID] = _uuid()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    local_date: Mapped[date] = mapped_column(Date, index=True)
+    shift_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    dwell_s: Mapped[int] = mapped_column(Integer)
+    centroid: Mapped[Any] = mapped_column(Geometry("POINT", srid=4326, spatial_index=True))
+    n_points: Mapped[int] = mapped_column(Integer)
+    visit_point_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("visit_points.id"))
+    distance_to_point_m: Mapped[float | None] = mapped_column(Float)
+    classification: Mapped[str] = mapped_column(String(30))
+    submission_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
+
+
+class CollectorDaySummary(Base):
+    __tablename__ = "collector_day_summaries"
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    local_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    distance_m: Mapped[float] = mapped_column(Float, default=0)
+    n_gps_points: Mapped[int] = mapped_column(Integer, default=0)
+    n_mock_points: Mapped[int] = mapped_column(Integer, default=0)
+    n_stops: Mapped[int] = mapped_column(Integer, default=0)
+    n_stops_at_points: Mapped[int] = mapped_column(Integer, default=0)
+    total_dwell_s: Mapped[int] = mapped_column(Integer, default=0)
+    median_dwell_s: Mapped[int] = mapped_column(Integer, default=0)
+    moving_s: Mapped[int] = mapped_column(Integer, default=0)
+    stationary_s: Mapped[int] = mapped_column(Integer, default=0)
+    n_gaps: Mapped[int] = mapped_column(Integer, default=0)
+    gap_s: Mapped[int] = mapped_column(Integer, default=0)
+    first_activity: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_activity: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    assigned: Mapped[int] = mapped_column(Integer, default=0)
+    completed: Mapped[int] = mapped_column(Integer, default=0)
+    n_submissions: Mapped[int] = mapped_column(Integer, default=0)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ---------------------------------------------------------------------------
 # System
 # ---------------------------------------------------------------------------
 class AuditLog(Base):

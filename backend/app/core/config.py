@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     media_dir: str = "/tmp/ragoh-media"  # noqa: S108
     max_media_bytes: int = 5 * 1024 * 1024
     # Max records accepted in one sync push (phones send in batches).
-    max_push_records: int = 500
+    max_push_records: int = 2000
 
 
 @lru_cache

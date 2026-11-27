@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -15,3 +16,17 @@ def get_db() -> Iterator[Session]:
         yield db
     finally:
         db.close()
+
+
+@contextmanager
+def session_scope() -> Iterator[Session]:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_session_factory():  # type: ignore[no-untyped-def]
+    """Dependency for background work that must outlive the request's session."""
+    return session_scope

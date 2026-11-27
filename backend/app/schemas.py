@@ -242,12 +242,38 @@ class AssignmentUpdateIn(BaseModel):
     changed_at: datetime
 
 
+class GpsPointIn(BaseModel):
+    id: uuid.UUID
+    recorded_at: datetime
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    accuracy_m: float | None = Field(default=None, ge=0)
+    altitude_m: float | None = None
+    speed_mps: float | None = None
+    bearing: float | None = None
+    battery_pct: int | None = Field(default=None, ge=0, le=100)
+    is_mock: bool = False
+    provider: str | None = Field(default=None, max_length=20)
+    network_type: str | None = Field(default=None, max_length=20)
+    shift_id: uuid.UUID | None = None
+
+
+class DeviceEventIn(BaseModel):
+    id: uuid.UUID
+    type: str = Field(min_length=1, max_length=40, pattern=r"^[a-z_]+$")
+    occurred_at: datetime
+    shift_id: uuid.UUID | None = None
+    details: dict[str, Any] = {}
+
+
 class SyncPushIn(BaseModel):
     device: DeviceIn
     device_time: datetime
     shifts: list[ShiftIn] = []
     submissions: list[SubmissionIn] = []
     assignment_updates: list[AssignmentUpdateIn] = []
+    gps_points: list[GpsPointIn] = []
+    device_events: list[DeviceEventIn] = []
 
 
 class RejectedItem(BaseModel):
@@ -280,3 +306,70 @@ class MediaOut(BaseModel):
     submission_id: uuid.UUID
     field_name: str
     size_bytes: int
+
+
+# --- Collector day (tracking results) ----------------------------------------
+class StopOut(BaseModel):
+    id: uuid.UUID
+    started_at: datetime
+    ended_at: datetime
+    dwell_s: int
+    lat: float
+    lon: float
+    n_points: int
+    classification: str
+    visit_point_id: uuid.UUID | None
+    visit_point_name: str | None
+    distance_to_point_m: float | None
+    submission_ids: list[str]
+
+
+class DaySummaryOut(ORM):
+    local_date: date
+    distance_m: float
+    n_gps_points: int
+    n_mock_points: int
+    n_stops: int
+    n_stops_at_points: int
+    total_dwell_s: int
+    median_dwell_s: int
+    moving_s: int
+    stationary_s: int
+    n_gaps: int
+    gap_s: int
+    first_activity: datetime | None
+    last_activity: datetime | None
+    assigned: int
+    completed: int
+    n_submissions: int
+    computed_at: datetime
+
+
+class DaySubmissionOut(BaseModel):
+    id: uuid.UUID
+    started_at: datetime
+    ended_at: datetime
+    duration_s: int
+    visit_point_id: uuid.UUID | None
+    lat: float | None
+    lon: float | None
+
+
+class DeviceEventOut(BaseModel):
+    type: str
+    occurred_at: datetime
+    details: dict[str, Any]
+
+
+class CollectorDayOut(BaseModel):
+    user: UserOut
+    date: date
+    summary: DaySummaryOut | None
+    stops: list[StopOut]
+    submissions: list[DaySubmissionOut]
+    events: list[DeviceEventOut]
+    track: list[list[float]] = Field(description="[lon, lat, unix_seconds] simplified to ~10 m")
+
+
+class ConsentIn(BaseModel):
+    notice_version: str = Field(min_length=1, max_length=20)

@@ -73,7 +73,16 @@ def db() -> Iterator[Session]:
 
 @pytest.fixture
 def client(db: Session) -> Iterator[TestClient]:
+    from contextlib import contextmanager
+
+    from app.db.session import get_session_factory
+
+    @contextmanager
+    def same_session() -> Iterator[Session]:
+        yield db  # background work shares the test transaction
+
     app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_session_factory] = lambda: same_session
     rate_limit._limiter = None  # fresh limiter per test
     with TestClient(app) as c:
         yield c

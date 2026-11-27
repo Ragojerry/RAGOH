@@ -9,7 +9,9 @@ target_metadata = Base.metadata
 
 def include_object(obj, name, type_, reflected, compare_to):  # type: ignore[no-untyped-def]
     # PostGIS owns these tables; never try to drop them.
-    return not (type_ == "table" and name in {"spatial_ref_sys"})
+    # PostGIS owns spatial_ref_sys; gps_points_* are monthly partitions managed in SQL.
+    managed_elsewhere = name == "spatial_ref_sys" or (name or "").startswith("gps_points_")
+    return not (type_ == "table" and managed_elsewhere)
 
 
 def run_migrations_offline() -> None:

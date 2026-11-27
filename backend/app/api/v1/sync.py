@@ -15,8 +15,9 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.api.v1.forms import latest_versions, version_out
@@ -28,8 +29,10 @@ from app.db.models import (
     Assignment,
     Campaign,
     Device,
+    DeviceEvent,
     FormKind,
     FormVersion,
+    GpsPoint,
     Role,
     Shift,
     Submission,
@@ -42,6 +45,7 @@ from app.db.models import (
 from app.db.models import (
     Form as FormModel,
 )
+from app.db.session import get_session_factory
 from app.schemas import (
     AssignmentOut,
     CampaignSyncOut,
@@ -54,6 +58,14 @@ from app.schemas import (
     UserOut,
 )
 from app.services.geo import point_wkt
+from app.services.tracking import (
+    DEFAULT_TZ,
+    SessionFactory,
+    ensure_partitions,
+    local_dates,
+    run_processing,
+    user_campaign,
+)
 
 router = APIRouter(tags=["sync"])
 
@@ -142,9 +154,21 @@ def pull(db: DB, user: CurrentUser) -> SyncPullOut:
 
 
 @router.post("/sync/push", response_model=SyncPushOut)
-def push(body: SyncPushIn, db: DB, user: CurrentUser) -> SyncPushOut:
+def push(
+    body: SyncPushIn,
+    db: DB,
+    user: CurrentUser,
+    background: BackgroundTasks,
+    session_factory: SessionFactory = Depends(get_session_factory),
+) -> SyncPushOut:
     settings = get_settings()
-    total = len(body.shifts) + len(body.submissions) + len(body.assignment_updates)
+    total = (
+        len(body.shifts)
+        + len(body.submissions)
+        + len(body.assignment_updates)
+        + len(body.gps_points)
+        + len(body.device_events)
+    )
     if total > settings.max_push_records:
         raise HTTPException(413, f"Send at most {settings.max_push_records} records per push")
 
@@ -251,7 +275,62 @@ def push(body: SyncPushIn, db: DB, user: CurrentUser) -> SyncPushOut:
             a.status_changed_at = upd.changed_at
         accepted["assignment_updates"].append(upd.id)
 
+    # GPS points: bulk insert, duplicates (retries) silently ignored.
+    touched: list[datetime] = []
+    if body.gps_points:
+        ensure_partitions(db, (p.recorded_at for p in body.gps_points))
+        rows = [
+            {
+                "id": p.id,
+                "recorded_at": p.recorded_at,
+                "user_id": user.id,
+                "shift_id": p.shift_id,
+                "device_id": device.id,
+                "geom": point_wkt(p.lon, p.lat),
+                "accuracy_m": p.accuracy_m,
+                "altitude_m": p.altitude_m,
+                "speed_mps": p.speed_mps,
+                "bearing": p.bearing,
+                "battery_pct": p.battery_pct,
+                "is_mock": p.is_mock,
+                "provider": p.provider,
+                "network_type": p.network_type,
+            }  # fmt: skip
+            for p in body.gps_points
+        ]
+        for i in range(0, len(rows), 500):
+            db.execute(
+                pg_insert(GpsPoint)
+                .values(rows[i : i + 500])
+                .on_conflict_do_nothing(index_elements=["id", "recorded_at"])
+            )
+        accepted["gps_points"] = [p.id for p in body.gps_points]
+        touched.extend(p.recorded_at for p in body.gps_points)
+
+    for ev in body.device_events:
+        if db.get(DeviceEvent, ev.id) is None:
+            db.add(
+                DeviceEvent(
+                    id=ev.id,
+                    user_id=user.id,
+                    shift_id=ev.shift_id,
+                    device_id=device.id,
+                    type=ev.type,
+                    occurred_at=ev.occurred_at,
+                    details=ev.details,
+                )  # fmt: skip
+            )
+        accepted["device_events"].append(ev.id)
+
+    touched.extend(s.ended_at for s in body.submissions if s.id in accepted["submissions"])
     db.commit()
+
+    if touched:
+        campaign = user_campaign(db, user.id)
+        tz = campaign.timezone if campaign else DEFAULT_TZ
+        background.add_task(
+            run_processing, session_factory, {(user.id, d) for d in local_dates(touched, tz)}
+        )
     return SyncPushOut(server_time=now, accepted=accepted, rejected=rejected)
 
 
