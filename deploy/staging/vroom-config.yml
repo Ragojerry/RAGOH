@@ -1,0 +1,22 @@
+# VROOM settings (mounted into the vroom container). Routing requests go to OSRM.
+cliArgs:
+  geometry: true
+  planmode: false
+  threads: 2
+  explore: 5
+  limit: "1mb"
+  logdir: "/conf"
+  logsize: "10M"
+  maxlocations: 1000
+  maxvehicles: 50
+  override: true
+  path: ""
+  port: 3000
+  router: "osrm"
+  timeout: 30000
+  baseurl: "/"
+routingServers:
+  osrm:
+    foot:
+      host: "osrm"
+      port: "5000"

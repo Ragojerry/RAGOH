@@ -4,6 +4,8 @@ import json
 from typing import Any
 
 from geoalchemy2.elements import WKBElement, WKTElement
+
+__all__ = ["WKTElement", "lonlat", "multipolygon_from_geojson", "point_wkt"]
 from geoalchemy2.shape import to_shape
 from shapely.geometry import MultiPolygon, Point, Polygon, shape
 from shapely.validation import make_valid

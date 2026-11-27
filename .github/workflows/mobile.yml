@@ -27,8 +27,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @ragoh/form-engine --filter @ragoh/sync-core --filter @ragoh/mobile typecheck
-      - run: pnpm --filter @ragoh/form-engine --filter @ragoh/sync-core --filter @ragoh/mobile test
+      - run: pnpm --filter @ragoh/form-engine --filter @ragoh/sync-core --filter @ragoh/routing --filter @ragoh/mobile typecheck
+      - run: pnpm --filter @ragoh/form-engine --filter @ragoh/sync-core --filter @ragoh/routing --filter @ragoh/mobile test
       - name: Bundle JavaScript for Android
         working-directory: apps/mobile
         env:

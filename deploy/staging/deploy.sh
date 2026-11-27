@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # Runs ON the staging server (via AWS Systems Manager) to roll out a new API image.
-# Usage: deploy.sh <api_image> <ragoh_host> <aws_region> <backup_bucket>
+# Usage: deploy.sh <api_image> <ragoh_host> <aws_region> <backup_bucket> [routing_bucket]
 set -euo pipefail
 
 API_IMAGE="$1"
 RAGOH_HOST="$2"
 REGION="$3"
 BACKUP_BUCKET="$4"
+ROUTING_BUCKET="${5:-}"
 APP_DIR=/opt/ragoh
 PARAM_PREFIX=/ragoh/staging
 
 cd "$APP_DIR"
-mkdir -p data/postgres data/caddy data/media
+mkdir -p data/postgres data/caddy data/media data/osrm data/tiles/assets
 chown 10001 data/media  # API container user
 
 param() {
@@ -32,8 +33,23 @@ EOF
 REGISTRY="${API_IMAGE%%/*}"
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRY"
 
+# Routing and map data built by the "Routing data" workflow (absent until it has run once).
+routing_changed=""
+if [ -n "$ROUTING_BUCKET" ]; then
+  for part in osrm tiles; do
+    if [ "$(aws s3 sync "s3://$ROUTING_BUCKET/$part/" "data/$part/" --region "$REGION" --delete --dryrun | wc -l)" -gt 0 ]; then
+      aws s3 sync "s3://$ROUTING_BUCKET/$part/" "data/$part/" --region "$REGION" --delete --only-show-errors
+      routing_changed=1
+    fi
+  done
+fi
+
 docker compose pull --quiet
 docker compose up -d --remove-orphans
+if [ -n "$routing_changed" ]; then
+  echo "Routing/map data updated; restarting routing services"
+  docker compose restart osrm vroom tiles
+fi
 
 # Wait for the API to report healthy (migrations run on start).
 for _ in $(seq 1 60); do

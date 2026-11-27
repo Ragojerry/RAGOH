@@ -5,8 +5,8 @@
 | Section 0 — Architecture & plan | Done (approved 26 Nov 2026) |
 | 1 — Foundation + AWS staging deploy | In review (PR #2) |
 | 2 — Mobile core (offline) | In review (PR #3) |
-| 3 — Tracking + stops | **In review** (PR) |
-| 4 — Routing | Not started |
+| 3 — Tracking + stops | In review (PR #4) |
+| 4 — Routing | **In review** (PR) |
 | 5 — Flags + follow-up | Not started |
 | 6 — Supervisor mobile mode | Not started |
 | 7 — Supervisor web dashboard | Not started |
@@ -35,6 +35,13 @@
 - GPS simulator (`backend/app/simulator.py`, guide in `tools/gps-simulator/`) with honest / cheater / spoofer / gaps / jitter scenarios, used by the tests and runnable against staging.
 - Tests: 60 backend (22 new for tracking), 11 sync engine. ADR 004.
 
+## Phase 4 — what's built
+- Server: walking route to a point (`GET /routes/to`, OSRM with readable turn-by-turn steps) and an optimised day plan (`POST /routes/day-plan`, VROOM with priorities, time windows and visit time), both falling back to straight-line estimates; plans stored in `routes_planned`; MapLibre style for the self-hosted FCT map (`GET /map/style.json`).
+- Pilot server: OSRM, VROOM and a vector-tile server added to the stack, map tiles/fonts served by Caddy; deploy copies routing/map data from a new S3 bucket.
+- **Routing data** workflow: builds the FCT foot network and offline map from OpenStreetMap/Protomaps, smoke-tests a route in Abuja, uploads to S3 (manual + monthly).
+- Phone: "Plan my route" (numbered visit order, walk distance/time per leg, route line on the map, "out of date — re-plan" when visits change), offline plan with the same algorithm (`packages/routing`), walking route + steps on each point, offline map download for the team's area (Settings).
+- Tests: backend 73 (13 new, OSRM/VROOM mocked), routing package 4. ADR 005.
+
 ## Decisions
 - AWS region eu-north-1 (Stockholm) — the account is on the AWS free plan, which only allows this region.
 - AWS bootstrap done: OIDC role `ragoh-github-deploy`, state bucket `ragoh-tfstate-568898409880-eu-north-1`, budget `ragoh-monthly` (USD 100). GitHub variables and `production` environment set.
@@ -45,7 +52,7 @@
 - FCT area-council boundaries in the seed are approximate rectangles — import official boundaries (GRID3/OCHA) via `POST /api/v1/admin-areas/import`.
 - MinIO is in the local compose file but not used until photo upload (Phase 2).
 - PIN is handled on the phone only (salted, hashed; wiped after 5 wrong tries) — no server endpoint needed.
-- Map uses online OpenStreetMap tiles until offline tiles arrive in Phase 4.
+- The offline map and road routing need one run of the **Routing data** workflow after the first deploy (until then the app uses OpenStreetMap online tiles and straight-line estimates). The workflow itself has not run yet.
 - Photos inside repeat groups are not uploaded yet (server accepts top-level photo fields only).
 - APK is signed with the default debug key — fine for the pilot; a proper release key is needed before wider distribution (Phase 8).
 - Barcode questions are typed by hand (camera scanning later).

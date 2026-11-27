@@ -10,5 +10,17 @@
 		Referrer-Policy "no-referrer"
 		-Server
 	}
-	reverse_proxy api:8000
+	# Map tiles (pmtiles server) and map fonts/icons, cached hard on phones.
+	handle_path /tiles/* {
+		header Cache-Control "public, max-age=604800"
+		reverse_proxy tiles:8080
+	}
+	handle /map-assets/* {
+		header Cache-Control "public, max-age=2592000"
+		root * /srv
+		file_server
+	}
+	handle {
+		reverse_proxy api:8000
+	}
 }

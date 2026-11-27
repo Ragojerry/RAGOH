@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     # Where uploaded photos are stored (a Docker volume on the pilot server).
     media_dir: str = "/tmp/ragoh-media"  # noqa: S108
     max_media_bytes: int = 5 * 1024 * 1024
+    # Routing engines (docker services on the pilot server). Empty = straight-line fallback.
+    osrm_url: str | None = None
+    vroom_url: str | None = None
+    routing_timeout_s: float = 10.0
+    # Offline map assets (tiles, fonts, style layers) produced by the routing-data workflow.
+    tiles_dir: str = "/data/tiles"
+    tileset: str = "fct"
+
     # Max records accepted in one sync push (phones send in batches).
     max_push_records: int = 2000
 

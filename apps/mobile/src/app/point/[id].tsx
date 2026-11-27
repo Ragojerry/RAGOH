@@ -1,7 +1,9 @@
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState } from "react";
 import { Alert, Linking, Modal, ScrollView, Text, View } from "react-native";
+import { PointsMap } from "@/components/PointsMap";
 import { Button, Card, Chip, H1, Input, Label, Muted, colors, styles } from "@/components/ui";
+import { formatDuration, routeTo, type WalkRoute } from "@/lib/routing";
 import { bearingDeg, compassPoint, formatDistance, haversineM } from "@/lib/geo";
 import { currentLocation } from "@/lib/location";
 import { findDraft, getAssignment, listForms, setAssignmentStatus } from "@/lib/repo";
@@ -23,6 +25,8 @@ export default function PointDetail() {
   const [me, setMe] = useState<Location | null>(null);
   const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number] | null>(null);
   const [reason, setReason] = useState("");
+  const [route, setRoute] = useState<WalkRoute | null>(null);
+  const [routing, setRouting] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -44,6 +48,21 @@ export default function PointDetail() {
   const p = a.visit_point;
   const dist = me ? haversineM(me, p) : undefined;
   const inside = dist !== undefined && dist <= p.geofence_m;
+
+  const showRoute = async () => {
+    setRouting(true);
+    try {
+      const loc = me ?? (await currentLocation(15_000));
+      if (!loc) {
+        Alert.alert("Location needed", "Turn on GPS to get a walking route.");
+        return;
+      }
+      setMe(loc);
+      setRoute(await routeTo(loc, a));
+    } finally {
+      setRouting(false);
+    }
+  };
 
   const saveOutcome = async () => {
     if (!outcome) return;
@@ -73,8 +92,30 @@ export default function PointDetail() {
           <Muted>Getting your location…</Muted>
         )}
         <Muted>{p.lat.toFixed(5)}, {p.lon.toFixed(5)} · arrival radius {p.geofence_m} m</Muted>
-        <Button title="Directions" variant="secondary" onPress={() => Linking.openURL(`geo:${p.lat},${p.lon}?q=${p.lat},${p.lon}(${encodeURIComponent(p.name)})`)} />
+        <View style={styles.row}>
+          <Button title="Walking route" onPress={showRoute} loading={routing} style={{ flex: 1 }} />
+          <Button title="Open in Maps" variant="secondary" onPress={() => Linking.openURL(`geo:${p.lat},${p.lon}?q=${p.lat},${p.lon}(${encodeURIComponent(p.name)})`)} />
+        </View>
       </Card>
+
+      {route && (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <View style={{ height: 260 }}>
+            <PointsMap assignments={[a]} me={me} route={route.geometry} zoom={15} />
+          </View>
+          <View style={{ padding: 16, gap: 6 }}>
+            <Text style={{ fontSize: 18, fontWeight: "800", color: colors.text }}>
+              {formatDistance(route.distanceM)} · about {formatDuration(route.durationS)} on foot
+            </Text>
+            <Muted>
+              {route.source === "osrm" ? "Route along roads and paths." : route.source === "offline" ? "Straight line — you are offline. Follow the direction shown." : "Straight line — road routing isn't set up on the server yet."}
+            </Muted>
+            {route.steps.map((st, i) => (
+              <Muted key={i}>{i + 1}. {st.instruction}{st.distance_m ? ` (${formatDistance(st.distance_m)})` : ""}</Muted>
+            ))}
+          </View>
+        </Card>
+      )}
 
       {Object.keys(p.attributes ?? {}).length > 0 && (
         <Card>

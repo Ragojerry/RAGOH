@@ -469,6 +469,24 @@ class CollectorDaySummary(Base):
     )
 
 
+class RoutePlanned(Base):
+    """A day plan suggested to a collector (kept so supervisors can compare plan vs actual)."""
+
+    __tablename__ = "routes_planned"
+    id: Mapped[uuid.UUID] = _uuid()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    local_date: Mapped[date] = mapped_column(Date, index=True)
+    mode: Mapped[str] = mapped_column(String(20))
+    source: Mapped[str] = mapped_column(String(20))
+    stop_order: Mapped[list[str]] = mapped_column(JSONB)
+    geometry: Mapped[Any | None] = mapped_column(
+        Geometry("LINESTRING", srid=4326, spatial_index=False)
+    )
+    distance_m: Mapped[float] = mapped_column(Float)
+    duration_s: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 # ---------------------------------------------------------------------------
 # System
 # ---------------------------------------------------------------------------

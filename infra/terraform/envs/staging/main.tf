@@ -115,7 +115,7 @@ resource "aws_ecr_lifecycle_policy" "api" {
 # Storage
 # ---------------------------------------------------------------------------
 resource "aws_s3_bucket" "this" {
-  for_each = toset(["deploy", "media", "backups"])
+  for_each = toset(["deploy", "media", "backups", "routing"])
   bucket   = "${local.name}-${each.key}-${local.account_id}"
 }
 
@@ -204,9 +204,12 @@ resource "aws_iam_role_policy" "server" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:ListBucket"]
-        Resource = [aws_s3_bucket.this["deploy"].arn, "${aws_s3_bucket.this["deploy"].arn}/*"]
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:ListBucket"]
+        Resource = [
+          aws_s3_bucket.this["deploy"].arn, "${aws_s3_bucket.this["deploy"].arn}/*",
+          aws_s3_bucket.this["routing"].arn, "${aws_s3_bucket.this["routing"].arn}/*",
+        ]
       },
       {
         Effect = "Allow"

@@ -19,6 +19,14 @@ The run summary (GitHub → Actions → the Deploy run) shows the staging URL. Y
 
 The first run creates everything, so it takes longer (~10–15 minutes): the server boots, installs Docker, registers with Systems Manager, and Caddy obtains an HTTPS certificate.
 
+## Road routing and offline map (one-time, after the first deploy)
+
+1. GitHub → **Actions** → **Routing data** → **Run workflow** (on `main`). It takes ~15–25 minutes and builds the FCT walking network and offline map from OpenStreetMap.
+2. When it finishes, run **Deploy** again (Actions → Deploy → Run workflow) so the server picks up the data.
+3. Check: `https://<host>/api/v1/map/style.json` now returns a style (not 404), and route answers in `/docs` say `"source": "osrm"` / `"vroom"`.
+
+It re-runs automatically on the 2nd of each month to pick up map changes (then re-run Deploy, or wait for the next merge).
+
 ## Logging in to staging
 
 - URL: shown in the Deploy run summary, e.g. `https://13-48-10-20.sslip.io` (API docs at `/docs`).
@@ -53,6 +61,6 @@ Staging is seeded with an FCT pilot: the FCT and its six area councils (**approx
 
 ## Costs (estimate)
 
-t3.small server ~USD 17/month, 30 GB disk ~USD 3, public IP ~USD 4, ECR/S3/SSM < USD 2. **About USD 25/month.** The `ragoh-monthly` budget emails at 80% of USD 100.
+t3.small server ~USD 17/month, 30 GB disk ~USD 3, public IP ~USD 4, ECR/S3/SSM < USD 2. **About USD 25/month.** Routing and map data add well under USD 1/month in S3. The `ragoh-monthly` budget emails at 80% of USD 100.
 
 > **AWS free plan:** if the first deploy fails at "Terraform apply" with an error about the instance type not being eligible, change `instance_type` in `variables.tf` to `t3.micro` (1 GB — tight but works for the pilot) or upgrade the account to a paid plan.

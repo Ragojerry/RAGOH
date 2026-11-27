@@ -27,6 +27,10 @@ output "backup_bucket" {
   value = aws_s3_bucket.this["backups"].bucket
 }
 
+output "routing_bucket" {
+  value = aws_s3_bucket.this["routing"].bucket
+}
+
 output "media_bucket" {
   value = aws_s3_bucket.this["media"].bucket
 }

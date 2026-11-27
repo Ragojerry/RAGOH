@@ -39,7 +39,13 @@ DEFAULT_CAMPAIGN_CONFIG: dict[str, Any] = {
         # Faster than this between two points = impossible movement (ignored for distance).
         "max_speed_mps": 40,
     },
-    "routing": {"mode": "foot", "walking_speed_kmh": 4.0},
+    "routing": {
+        "mode": "foot",
+        "walking_speed_kmh": 4.0,
+        # Time planned at each visit when ordering the day.
+        "service_s": 600,
+        "return_to_start": False,
+    },
     "offline_days": 7,
     "retention": {"raw_gps_days": 90},
 }

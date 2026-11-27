@@ -39,5 +39,11 @@ Phones need **Android 8.0 or newer**. Uninstalling the app deletes unsynced work
 2. Sync, then open `/docs` → `GET /api/v1/collectors/{your user id}/day?date=today` as a supervisor or admin: you should see a stop at each place, with the time spent there, and the walked distance.
 3. Or use the simulator (`tools/gps-simulator/README.md`) to push a whole synthetic day, including a "cheater" day.
 
+## Routes and offline map (Phase 4)
+- **My points → Plan my route**: puts today's open visits in the best walking order from where you are, numbers them on the list and the map, and shows the walking distance and time to each. When visits change (done, skipped, new ones), it says "out of date" — tap **Re-plan**.
+- Without internet the app still plans, using straight-line distances ("estimated — offline").
+- On a point, **Walking route** shows the route on the map with turn-by-turn steps (or a straight line when offline).
+- **Settings → Offline map → Download offline map**: downloads the map around your points (about 10–40 MB — use Wi-Fi). Available once the server's map has been prepared (see DEPLOYMENT.md).
+
 ## What's not in this phase
-Road routing and offline map tiles (Phase 4 — the map currently needs internet; the list works offline), supervisor team views (Phase 6). Barcode questions are typed by hand for now.
+Supervisor team views (Phase 6). Barcode questions are typed by hand for now.

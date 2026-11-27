@@ -5,7 +5,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app import __version__
-from app.api.v1 import areas, auth, campaigns, collectors, forms, sync, teams, users, visit_points
+from app.api.v1 import (
+    areas,
+    auth,
+    campaigns,
+    collectors,
+    forms,
+    routes,
+    sync,
+    teams,
+    users,
+    visit_points,
+)
 from app.core.config import get_settings
 from app.db.session import engine
 
@@ -29,7 +40,7 @@ app.add_middleware(
 )
 
 api = APIRouter(prefix="/api/v1")
-for module in (auth, users, areas, campaigns, teams, visit_points, forms, sync, collectors):
+for module in (auth, users, areas, campaigns, teams, visit_points, forms, sync, collectors, routes):
     api.include_router(module.router)
 app.include_router(api)
 

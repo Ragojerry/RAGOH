@@ -34,12 +34,49 @@ services:
       RAGOH_DEMO_PASSWORD: ${DEMO_PASSWORD}
       RAGOH_SEED_DEMO: "true"
       RAGOH_MEDIA_DIR: /data/media
+      RAGOH_OSRM_URL: http://osrm:5000
+      RAGOH_VROOM_URL: http://vroom:3000
+      RAGOH_TILES_DIR: /data/tiles
     volumes:
       - /opt/ragoh/data/media:/data/media
+      - /opt/ragoh/data/tiles:/data/tiles:ro
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_started }
     mem_limit: 512m
+
+  # Walking routes on the FCT road network. Waits quietly until the routing-data workflow
+  # has delivered data; the API falls back to straight-line estimates meanwhile.
+  osrm:
+    image: osrm/osrm-backend:v5.27.1
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - 'if [ -f /data/fct.osrm.mldgr ]; then exec osrm-routed --algorithm mld --max-table-size 1000 /data/fct.osrm; else echo "No routing data yet"; exec sleep infinity; fi'
+    volumes:
+      - /opt/ragoh/data/osrm:/data:ro
+    mem_limit: 384m
+
+  # Orders a day's visits (travelling-salesman with priorities and time windows), using OSRM.
+  vroom:
+    image: ghcr.io/vroom-project/vroom-docker:v1.14.0
+    restart: unless-stopped
+    environment:
+      VROOM_ROUTER: osrm
+    volumes:
+      - ./vroom-config.yml:/conf/config.yml:ro
+    depends_on: [osrm]
+    mem_limit: 192m
+
+  # Serves the FCT vector map tiles (for online maps and phone offline downloads).
+  tiles:
+    image: protomaps/go-pmtiles:latest  # small, stateless tile server
+    restart: unless-stopped
+    command: ["serve", "/data", "--port=8080", "--cors=*"]
+    volumes:
+      - /opt/ragoh/data/tiles:/data:ro
+    mem_limit: 96m
 
   caddy:
     image: caddy:2-alpine
@@ -50,5 +87,6 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - /opt/ragoh/data/caddy:/data
-    depends_on: [api]
+      - /opt/ragoh/data/tiles/assets:/srv/map-assets:ro
+    depends_on: [api, tiles]
     mem_limit: 128m
